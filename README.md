@@ -1,4 +1,4 @@
-# TODOforAI CLI
+# TODOforAI CLI extras
 
 A command-line interface for creating TODOs from piped input using the TODOforAI Edge package.
 

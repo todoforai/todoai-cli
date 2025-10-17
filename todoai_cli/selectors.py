@@ -2,23 +2,26 @@ import sys
 from typing import Callable, List, Dict, Tuple, Optional
 
 from todoforai_edge.utils import findBy
+from todoforai_edge.types import ProjectListItem, AgentSettings
 
 
-def _get_display_name(item: Dict, name_fields: List[str] = None) -> str:
-    """Get display name from item, trying multiple possible field names"""
-    if name_fields is None:
-        name_fields = ['name', 'title', 'displayName', 'label']
+def _get_display_name(item: Dict) -> str:
+    """Get display name from item using the known structure"""
+    # For projects: item["project"]["name"]
+    if 'project' in item and isinstance(item['project'], dict):
+        return item['project'].get('name', 'Unknown')
     
-    for field in name_fields:
-        if field in item and item[field]:
-            return item[field]
-    
-    # Fallback to ID if no name field found
-    return item.get('id', 'Unknown')
+    # For agents: item["name"] 
+    return item.get('name', 'Unknown')
 
 
 def _get_item_id(item: Dict) -> str:
-    """Get ID from item"""
+    """Get ID from item using the known structure"""
+    # For projects: item["project"]["id"]
+    if 'project' in item and isinstance(item['project'], dict):
+        return item['project'].get('id', '')
+    
+    # For agents: item["id"]
     return item.get('id', '')
 
 
@@ -35,7 +38,7 @@ def _get_terminal_input(prompt: str) -> str:
         return input(prompt).strip()
 
 
-def select_project(projects: List[Dict], default_project_id: Optional[str], set_default: Callable[[str, str], None]) -> Tuple[str, str]:
+def select_project(projects: List[ProjectListItem], default_project_id: Optional[str], set_default: Callable[[str, str], None]) -> Tuple[str, str]:
     """Interactive project selection with default and recent support"""
     if not projects:
         print("❌ No projects available", file=sys.stderr)
@@ -101,7 +104,7 @@ def select_project(projects: List[Dict], default_project_id: Optional[str], set_
             sys.exit(1)
 
 
-def select_agent(agents: List[Dict], default_agent_name: Optional[str], set_default: Callable[[str], None]) -> Dict:
+def select_agent(agents: List[AgentSettings], default_agent_name: Optional[str], set_default: Callable[[str], None]) -> AgentSettings:
     """Interactive agent selection with default support (partial name match)"""
     if not agents:
         print("❌ No agents available", file=sys.stderr)

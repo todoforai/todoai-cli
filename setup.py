@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="todoai-cli",
-    version="0.1.0",
+    version="0.1.1",
     author="TODOforAI",
     author_email="support@todoforai.com",
     description="Command-line interface for TODOforAI Edge",
@@ -19,15 +19,12 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
     ],
-    python_requires=">=3.8",
+    python_requires=">=3.10",
     install_requires=[
-        # Remove todoforai_edge dependency for now
-        # Users need to install it separately: pip install -e ../edge
+        "todoforai-edge-cli>=0.1.0",
     ],
     entry_points={
         "console_scripts": [
