@@ -71,6 +71,7 @@ def main():
                        help="Version bump type (default: patch)")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be done without executing")
     parser.add_argument("--skip-tests", action="store_true", help="Skip running tests")
+    parser.add_argument("--auto-confirm", action="store_true", help="Skip confirmation prompt (for CI)")
     
     args = parser.parse_args()
     
@@ -86,11 +87,12 @@ def main():
         print("🔍 DRY RUN - No changes will be made")
         return
     
-    # Confirm deployment
-    response = input(f"\nDeploy version {new_version}? (y/N): ").strip().lower()
-    if response != 'y':
-        print("❌ Deployment cancelled")
-        return
+    # Confirm deployment (skip in CI)
+    if not args.auto_confirm:
+        response = input(f"\nDeploy version {new_version}? (y/N): ").strip().lower()
+        if response != 'y':
+            print("❌ Deployment cancelled")
+            return
     
     try:
         # Update version files
@@ -111,20 +113,24 @@ def main():
         print("🔨 Building package...")
         run_command("python -m build")
         
-        # Upload to PyPI
-        print("🚀 Uploading to PyPI...")
-        run_command("python -m twine upload dist/*")
+        # Upload to PyPI (skip in CI - handled by workflow)
+        if not args.auto_confirm:
+            print("🚀 Uploading to PyPI...")
+            run_command("python -m twine upload dist/*")
         
         # Git operations
         print("📝 Creating git commit and tag...")
         run_command(f"git add -A")
         run_command(f'git commit -m "Release v{new_version}"')
         run_command(f"git tag v{new_version}")
-        run_command("git push origin main")
-        run_command("git push origin --tags")
         
-        print(f"✅ Successfully deployed todoai-cli v{new_version}")
-        print(f"📦 Package available at: https://pypi.org/project/todoai-cli/{new_version}/")
+        if not args.auto_confirm:
+            run_command("git push origin main")
+            run_command("git push origin --tags")
+        
+        print(f"✅ Successfully prepared todoai-cli v{new_version}")
+        if not args.auto_confirm:
+            print(f"📦 Package available at: https://pypi.org/project/todoai-cli/{new_version}/")
         
     except Exception as e:
         print(f"❌ Deployment failed: {e}")

@@ -1,4 +1,4 @@
-.PHONY: help clean build test deploy deploy-patch deploy-minor deploy-major dry-run install dev-install
+.PHONY: help clean build test deploy deploy-patch deploy-minor deploy-major dry-run install dev-install release tag-release
 
 # Default target
 help:
@@ -9,10 +9,11 @@ help:
 	@echo "  make clean        - Clean build artifacts"
 	@echo "  make build        - Build package"
 	@echo "  make dry-run      - Show what deployment would do"
-	@echo "  make deploy       - Deploy with patch version bump"
-	@echo "  make deploy-patch - Deploy with patch version bump (0.1.1 -> 0.1.2)"
-	@echo "  make deploy-minor - Deploy with minor version bump (0.1.1 -> 0.2.0)"
-	@echo "  make deploy-major - Deploy with major version bump (0.1.1 -> 1.0.0)"
+	@echo "  make deploy       - Deploy with patch version bump (local)"
+	@echo "  make deploy-patch - Deploy with patch version bump (local)"
+	@echo "  make deploy-minor - Deploy with minor version bump (local)"
+	@echo "  make deploy-major - Deploy with major version bump (local)"
+	@echo "  make release      - Trigger GitHub Actions release (recommended)"
 
 install:
 	pip install .
@@ -35,6 +36,7 @@ build: clean
 dry-run:
 	python -m todoai_cli.deploy --dry-run
 
+# Local deployment (not recommended for production)
 deploy: deploy-patch
 
 deploy-patch:
@@ -46,5 +48,23 @@ deploy-minor:
 deploy-major:
 	python -m todoai_cli.deploy --bump major
 
+# Recommended: Use GitHub Actions for releases
+release:
+	@echo "🚀 Triggering GitHub Actions release..."
+	@echo "Go to: https://github.com/todoforai/todoai-cli/actions/workflows/release.yml"
+	@echo "Click 'Run workflow' and select version bump type"
+
 # Quick test and deploy
 test-deploy: test deploy-patch
+
+# New command: Bump version, commit, tag and push (triggers GitHub Actions)
+tag-release:
+	@echo "🏷️  Creating tagged release..."
+	$(MAKE) deploy-patch
+	@NEW_VERSION=$$(python -c "import sys; sys.path.insert(0, 'todoai_cli'); from deploy import get_current_version; print(get_current_version())"); \
+	git add -A && \
+	git commit -m "Release v$$NEW_VERSION" && \
+	git tag "v$$NEW_VERSION" && \
+	git push origin main && \
+	git push origin "v$$NEW_VERSION" && \
+	echo "🚀 Tagged release v$$NEW_VERSION pushed! GitHub Actions will handle PyPI deployment."
