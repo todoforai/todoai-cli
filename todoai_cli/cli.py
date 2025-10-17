@@ -20,7 +20,7 @@ from todoforai_edge.types import ProjectListItem, AgentSettings
 # New internal modules
 from .config_store import TODOCLIConfig
 from .edge_client import init_edge
-from .selectors import select_project, select_agent, _get_display_name, _get_item_id, _get_terminal_input
+from .project_selectors import select_project, select_agent, _get_display_name, _get_item_id, _get_terminal_input
 
 def _exit_on_sigint(signum, frame):
     """Handle SIGINT (Ctrl+C) by exiting with a message and code 130."""
