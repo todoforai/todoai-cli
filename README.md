@@ -1,6 +1,8 @@
-# TODOforAI CLI extras
+# TODOforAI CLI
 
-A command-line interface for creating TODOs from piped input using the TODOforAI Edge package.
+A command-line interface for creating TODOs from piped input using [TODOfor.ai](https://todofor.ai).
+
+Built on top of the [todoforai-edge-cli](https://github.com/todoforai/edge) Python package.
 
 ## Installation
 
@@ -20,7 +22,7 @@ pip install -e .
 
 ## Setup
 
-Set your API key:
+Get your API key from [todofor.ai](https://todofor.ai/apikey) and set it:
 ```bash
 export TODOFORAI_API_KEY=your_api_key_here
 ```

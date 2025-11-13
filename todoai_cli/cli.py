@@ -41,17 +41,35 @@ class TODOCLITool:
         )
     
     def read_stdin(self) -> str:
-        """Read content from stdin"""
+        """Read content from stdin or prompt for interactive input"""
         if sys.stdin.isatty():
-            print("❌ No piped input detected. Usage: echo 'content' | todoai_cli", file=sys.stderr)
-            sys.exit(1)
-        
-        content = sys.stdin.read().strip()
-        if not content:
-            print("❌ Empty input", file=sys.stderr)
-            sys.exit(1)
-        
-        return content
+            # Interactive mode - prompt user for input
+            print("📝 Enter your TODO content (press Ctrl+D when done, or Ctrl+C to cancel):", file=sys.stderr)
+            print("", file=sys.stderr)  # Empty line for better formatting
+            
+            lines = []
+            try:
+                while True:
+                    line = input()
+                    lines.append(line)
+            except EOFError:
+                # User pressed Ctrl+D
+                pass
+            
+            content = '\n'.join(lines).strip()
+            if not content:
+                print("❌ Empty input", file=sys.stderr)
+                sys.exit(1)
+            
+            return content
+        else:
+            # Piped input mode
+            content = sys.stdin.read().strip()
+            if not content:
+                print("❌ Empty input", file=sys.stderr)
+                sys.exit(1)
+            
+            return content
     
     async def get_projects(self) -> List[ProjectListItem]:
         """Get available projects"""

@@ -56,15 +56,3 @@ release:
 
 # Quick test and deploy
 test-deploy: test deploy-patch
-
-# New command: Bump version, commit, tag and push (triggers GitHub Actions)
-tag-release:
-	@echo "🏷️  Creating tagged release..."
-	$(MAKE) deploy-patch
-	@NEW_VERSION=$$(python -c "import sys; sys.path.insert(0, 'todoai_cli'); from deploy import get_current_version; print(get_current_version())"); \
-	git add -A && \
-	git commit -m "Release v$$NEW_VERSION" && \
-	git tag "v$$NEW_VERSION" && \
-	git push origin main && \
-	git push origin "v$$NEW_VERSION" && \
-	echo "🚀 Tagged release v$$NEW_VERSION pushed! GitHub Actions will handle PyPI deployment."

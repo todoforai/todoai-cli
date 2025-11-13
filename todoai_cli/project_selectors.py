@@ -1,4 +1,6 @@
 import sys
+import os
+from pathlib import Path
 from typing import Callable, List, Dict, Tuple, Optional
 
 from todoforai_edge.utils import findBy
@@ -36,6 +38,37 @@ def _get_terminal_input(prompt: str) -> str:
     except (OSError, FileNotFoundError):
         # Fallback to regular input (will fail if stdin is redirected)
         return input(prompt).strip()
+
+
+def _get_workspace_paths(agent: AgentSettings) -> List[str]:
+    """Extract all workspace paths from an agent's configuration"""
+    paths = []
+    
+    # Navigate through the nested structure: edgesMcpConfigs -> edge_id -> todoai -> workspacePaths
+    edges_configs = agent.get('edgesMcpConfigs', {})
+    for edge_id, edge_config in edges_configs.items():
+        todoai_config = edge_config.get('todoai', {})
+        workspace_paths = todoai_config.get('workspacePaths', [])
+        if isinstance(workspace_paths, list):
+            paths.extend(workspace_paths)
+    
+    return paths
+
+
+def _find_workspace_agent_strict(agents: List[AgentSettings], current_path: Path) -> Optional[AgentSettings]:
+    """Return agent if it has exactly one workspacePaths entry that strictly equals current_path."""
+    for agent in agents:
+        paths = _get_workspace_paths(agent)
+        
+        if len(paths) != 1:
+            continue
+        try:
+            wp = Path(paths[0]).resolve()
+        except (OSError, ValueError):
+            continue
+        if wp == current_path:
+            return agent
+    return None
 
 
 def select_project(projects: List[ProjectListItem], default_project_id: Optional[str], set_default: Callable[[str, str], None]) -> Tuple[str, str]:
@@ -105,7 +138,7 @@ def select_project(projects: List[ProjectListItem], default_project_id: Optional
 
 
 def select_agent(agents: List[AgentSettings], default_agent_name: Optional[str], set_default: Callable[[str], None]) -> AgentSettings:
-    """Interactive agent selection with default support (partial name match)"""
+    """Interactive agent selection with workspace-aware (strict) and default support"""
     if not agents:
         print("❌ No agents available", file=sys.stderr)
         sys.exit(1)
@@ -117,8 +150,18 @@ def select_agent(agents: List[AgentSettings], default_agent_name: Optional[str],
         print(f"Auto-selected only available agent: {agent_name}", file=sys.stderr)
         set_default(agent_name)
         return agent
+
+    # Resolve current path once, reuse
+    current_path = Path(os.getcwd()).resolve()
+
+    # First: strict workspace match (only agents with exactly one workspace path, equality required)
+    workspace_agent = _find_workspace_agent_strict(agents, current_path)
+    if workspace_agent:
+        agent_name = _get_display_name(workspace_agent)
+        print(f"Auto-selected workspace agent '{agent_name}' based on current directory: \033[36m{current_path}\033[0m", file=sys.stderr)
+        return workspace_agent
     
-    # Check if default agent exists
+    # Second: default agent (partial match)
     if default_agent_name:
         agent = findBy(agents, lambda a: default_agent_name.lower() in _get_display_name(a).lower())
         if agent:
@@ -129,10 +172,25 @@ def select_agent(agents: List[AgentSettings], default_agent_name: Optional[str],
     print("\nPlease choose an agent:", file=sys.stderr)
     print("", file=sys.stderr)
     
-    # Display agents with numbers
+    # Display agents with numbers, highlighting workspace matches
     for i, agent in enumerate(agents, 1):
         agent_name = _get_display_name(agent)
-        print(f" [{i}] {agent_name}", file=sys.stderr)
+        
+        is_workspace_match = False
+        workspace_paths = _get_workspace_paths(agent)
+        for workspace_path in workspace_paths:
+            try:
+                wp = Path(workspace_path).resolve()
+                if current_path == wp or (hasattr(current_path, "is_relative_to") and current_path.is_relative_to(wp)):
+                    is_workspace_match = True
+                    break
+            except (OSError, ValueError):
+                continue
+        
+        if is_workspace_match:
+            print(f" [{i}] {agent_name} 📁", file=sys.stderr)
+        else:
+            print(f" [{i}] {agent_name}", file=sys.stderr)
     
     print("", file=sys.stderr)
     
