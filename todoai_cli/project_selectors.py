@@ -1,6 +1,4 @@
 import sys
-import os
-from pathlib import Path
 from typing import Callable, List, Dict, Tuple, Optional
 
 from todoforai_edge.utils import findBy
@@ -27,48 +25,86 @@ def _get_item_id(item: Dict) -> str:
     return item.get('id', '')
 
 
-def _get_terminal_input(prompt: str) -> str:
-    """Get input from terminal even when stdin is redirected"""
+def _get_single_char() -> str:
+    """Get a single character from the user's terminal without pressing Enter.
+
+    Prefer /dev/tty (real terminal) so this works even when stdin is piped.
+    Fallbacks:
+      - termios/tty on /dev/tty
+      - msvcrt.getch() on Windows
+      - regular input() if nothing else works
+    """
+    # Try Unix-style /dev/tty first
     try:
-        # Try to open /dev/tty (Unix) for direct terminal access
-        with open('/dev/tty', 'r') as tty:
-            print(prompt, end='', file=sys.stderr)
-            sys.stderr.flush()
-            return tty.readline().strip()
-    except (OSError, FileNotFoundError):
-        # Fallback to regular input (will fail if stdin is redirected)
-        return input(prompt).strip()
+        import termios
+        import tty
 
+        with open("/dev/tty", "rb+", buffering=0) as tty_dev:
+            fd = tty_dev.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setcbreak(fd)
+                ch = tty_dev.read(1)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return (ch.decode("utf-8", errors="ignore") or " ")[0]
+    except (OSError, FileNotFoundError, ImportError):
+        # /dev/tty not available or termios missing -> try platform-specific or fallback
+        pass
+    except Exception:
+        # Any unexpected terminal error -> fall through to fallbacks
+        pass
 
-def _get_workspace_paths(agent: AgentSettings) -> List[str]:
-    """Extract all workspace paths from an agent's configuration"""
-    paths = []
-    
-    # Navigate through the nested structure: edgesMcpConfigs -> edge_id -> todoai -> workspacePaths
-    edges_configs = agent.get('edgesMcpConfigs', {})
-    for edge_id, edge_config in edges_configs.items():
-        todoai_config = edge_config.get('todoai', {})
-        workspace_paths = todoai_config.get('workspacePaths', [])
-        if isinstance(workspace_paths, list):
-            paths.extend(workspace_paths)
-    
-    return paths
-
-
-def _find_workspace_agent_strict(agents: List[AgentSettings], current_path: Path) -> Optional[AgentSettings]:
-    """Return agent if it has exactly one workspacePaths entry that strictly equals current_path."""
-    for agent in agents:
-        paths = _get_workspace_paths(agent)
-        
-        if len(paths) != 1:
-            continue
+    # Windows fallback
+    try:
+        import msvcrt
+        ch = msvcrt.getch()
         try:
-            wp = Path(paths[0]).resolve()
-        except (OSError, ValueError):
-            continue
-        if wp == current_path:
-            return agent
-    return None
+            return ch.decode("utf-8", errors="ignore") or " "
+        except Exception:
+            return " "
+    except ImportError:
+        pass
+
+    # Last resort: use input(), take first char
+    try:
+        line = input().strip()
+        return line[:1] if line else "y"
+    except (EOFError, KeyboardInterrupt):
+        # Treat as cancel by default, caller can interpret
+        return "n"
+
+
+def _get_terminal_input(prompt: str) -> str:
+    """Get line input from the user's terminal even when stdin is redirected.
+
+    Prefer /dev/tty; fall back to input().
+    """
+    # Try /dev/tty (Unix-like)
+    try:
+        with open("/dev/tty", "r") as tty_in, open("/dev/tty", "w") as tty_out:
+            print(prompt, end='', file=tty_out, flush=True)
+            return tty_in.readline().strip()
+    except (OSError, FileNotFoundError):
+        # Fallback to regular stdin
+        try:
+            return input(prompt).strip()
+        except EOFError:
+            return ""
+
+
+def _get_single_char_input(prompt: str) -> str:
+    """Get single character input for y/n/a/c style prompts."""
+    print(prompt, end='', file=sys.stderr)
+    sys.stderr.flush()
+
+    try:
+        ch = _get_single_char().lower()
+        print(ch, file=sys.stderr)  # Echo the character
+        return ch[:1] if ch else "y"
+    except (KeyboardInterrupt, EOFError):
+        print("\n", file=sys.stderr)
+        raise
 
 
 def select_project(projects: List[ProjectListItem], default_project_id: Optional[str], set_default: Callable[[str, str], None]) -> Tuple[str, str]:
@@ -138,7 +174,7 @@ def select_project(projects: List[ProjectListItem], default_project_id: Optional
 
 
 def select_agent(agents: List[AgentSettings], default_agent_name: Optional[str], set_default: Callable[[str], None]) -> AgentSettings:
-    """Interactive agent selection with workspace-aware (strict) and default support"""
+    """Interactive agent selection with default support (partial name match)"""
     if not agents:
         print("❌ No agents available", file=sys.stderr)
         sys.exit(1)
@@ -150,18 +186,8 @@ def select_agent(agents: List[AgentSettings], default_agent_name: Optional[str],
         print(f"Auto-selected only available agent: {agent_name}", file=sys.stderr)
         set_default(agent_name)
         return agent
-
-    # Resolve current path once, reuse
-    current_path = Path(os.getcwd()).resolve()
-
-    # First: strict workspace match (only agents with exactly one workspace path, equality required)
-    workspace_agent = _find_workspace_agent_strict(agents, current_path)
-    if workspace_agent:
-        agent_name = _get_display_name(workspace_agent)
-        print(f"Auto-selected workspace agent '{agent_name}' based on current directory: \033[36m{current_path}\033[0m", file=sys.stderr)
-        return workspace_agent
     
-    # Second: default agent (partial match)
+    # Check if default agent exists
     if default_agent_name:
         agent = findBy(agents, lambda a: default_agent_name.lower() in _get_display_name(a).lower())
         if agent:
@@ -172,25 +198,10 @@ def select_agent(agents: List[AgentSettings], default_agent_name: Optional[str],
     print("\nPlease choose an agent:", file=sys.stderr)
     print("", file=sys.stderr)
     
-    # Display agents with numbers, highlighting workspace matches
+    # Display agents with numbers
     for i, agent in enumerate(agents, 1):
         agent_name = _get_display_name(agent)
-        
-        is_workspace_match = False
-        workspace_paths = _get_workspace_paths(agent)
-        for workspace_path in workspace_paths:
-            try:
-                wp = Path(workspace_path).resolve()
-                if current_path == wp or (hasattr(current_path, "is_relative_to") and current_path.is_relative_to(wp)):
-                    is_workspace_match = True
-                    break
-            except (OSError, ValueError):
-                continue
-        
-        if is_workspace_match:
-            print(f" [{i}] {agent_name} 📁", file=sys.stderr)
-        else:
-            print(f" [{i}] {agent_name}", file=sys.stderr)
+        print(f" [{i}] {agent_name}", file=sys.stderr)
     
     print("", file=sys.stderr)
     

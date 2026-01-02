@@ -20,7 +20,7 @@ from todoforai_edge.types import ProjectListItem, AgentSettings
 # New internal modules
 from .config_store import TODOCLIConfig
 from .edge_client import init_edge
-from .project_selectors import select_project, select_agent, _get_display_name, _get_item_id, _get_terminal_input
+from .project_selectors import select_project, select_agent, _get_display_name, _get_item_id, _get_terminal_input, _get_single_char_input
 
 def _exit_on_sigint(signum, frame):
     """Handle SIGINT (Ctrl+C) by exiting with a message and code 130."""
@@ -107,12 +107,12 @@ class TODOCLITool:
         
         try:
             print("\n💡 Options: Y=create • n=cancel • a=append text • c=change config", file=sys.stderr)
-            response = _get_terminal_input("Create this TODO? (Y/n/a/c): ").strip().lower()
-            if response in ['n', 'no', 'N']:
+            response = _get_single_char_input("Create this TODO? (Y/n/a/c): ")
+            if response in ['n', 'N']:
                 return "cancel"
-            elif response in ['c', 'config', 'change']:
+            elif response in ['c', 'C']:
                 return "config"
-            elif response in ['a', 'append']:
+            elif response in ['a', 'A']:
                 return "append"
             else:
                 return "create"
