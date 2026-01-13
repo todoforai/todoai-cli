@@ -131,7 +131,8 @@ class TODOCLITool:
             print(f"❌ Error creating TODO: {e}", file=sys.stderr)
             sys.exit(1)
 
-    async def watch_todo(self, todo_id: str, timeout: int, json_output: bool):
+    async def watch_todo(self, todo_id: str, project_id: str, timeout: int, json_output: bool) -> bool:
+        """Watch todo execution. Returns True if completed normally, False if interrupted."""
         ignore = {
             "todo:msg_start", "todo:msg_done", "todo:msg_error", "todo:msg_stop_sequence",
             "todo:msg_meta_ai", "todo:status", "block:end",
@@ -153,8 +154,26 @@ class TODOCLITool:
             elif msg_type not in ignore:
                 print(f"[{msg_type}]", file=sys.stderr)
 
+        # Set up interrupt handling
+        interrupted = False
+        watch_task = None
+
+        def handle_interrupt():
+            nonlocal interrupted
+            if not interrupted:
+                interrupted = True
+                print("\n\033[33m⚡ Sending interrupt signal...\033[0m", file=sys.stderr)
+                if watch_task:
+                    watch_task.cancel()
+
+        # Temporarily override SIGINT handler
+        old_handler = signal.signal(signal.SIGINT, lambda s, f: handle_interrupt())
+
         try:
-            result = await self.edge.wait_for_todo_completion(todo_id, timeout, on_message)
+            watch_task = asyncio.create_task(
+                self.edge.wait_for_todo_completion(todo_id, timeout, on_message)
+            )
+            result = await watch_task
             print()  # newline after streaming
             if not result.get("success"):
                 msg_type = result.get("type", "unknown")
@@ -162,12 +181,20 @@ class TODOCLITool:
                     print(f"❌ Error: {result.get('payload', {}).get('error', 'unknown')}", file=sys.stderr)
                 else:
                     print(f"⚠️  Stopped: {msg_type}", file=sys.stderr)
+            return True
+        except asyncio.CancelledError:
+            # Send interrupt to backend
+            await self.edge.interrupt_todo(project_id, todo_id)
+            print("\033[33m⚡ Interrupted\033[0m", file=sys.stderr)
+            return False
         except TodoStreamError as e:
             print(f"❌ Stream error: {e}", file=sys.stderr)
             sys.exit(1)
         except asyncio.TimeoutError:
             print(f"\n⏱️  Timeout after {timeout}s", file=sys.stderr)
             sys.exit(1)
+        finally:
+            signal.signal(signal.SIGINT, old_handler)
     
     async def resume_todo(self, todo_id: str, timeout: int, json_output: bool):
         """Resume an existing todo - show history and enter interactive mode"""
@@ -220,7 +247,7 @@ class TODOCLITool:
                     todo_id=todo_id,
                     allow_queue=True
                 )
-                await self.watch_todo(todo_id, timeout, json_output)
+                await self.watch_todo(todo_id, project_id, timeout, json_output)
             except (KeyboardInterrupt, EOFError):
                 break
 
@@ -556,7 +583,7 @@ class TODOCLITool:
 
         # Watch for completion (default behavior)
         if not args.no_watch:
-            await self.watch_todo(actual_todo_id, args.timeout, args.json)
+            await self.watch_todo(actual_todo_id, project_id, args.timeout, args.json)
 
         # Interactive mode - continue conversation
         if args.interactive and not args.no_watch:
@@ -585,7 +612,7 @@ class TODOCLITool:
                         todo_id=actual_todo_id,
                         allow_queue=True
                     )
-                    await self.watch_todo(actual_todo_id, args.timeout, args.json)
+                    await self.watch_todo(actual_todo_id, project_id, args.timeout, args.json)
                 except (KeyboardInterrupt, EOFError):
                     break
 
