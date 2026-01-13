@@ -173,7 +173,7 @@ def select_project(projects: List[ProjectListItem], default_project_id: Optional
             sys.exit(1)
 
 
-def select_agent(agents: List[AgentSettings], default_agent_name: Optional[str], set_default: Callable[[str], None]) -> AgentSettings:
+def select_agent(agents: List[AgentSettings], default_agent_name: Optional[str], set_default: Callable[[str, dict], None]) -> AgentSettings:
     """Interactive agent selection with default support (partial name match)"""
     if not agents:
         print("❌ No agents available", file=sys.stderr)
@@ -184,7 +184,7 @@ def select_agent(agents: List[AgentSettings], default_agent_name: Optional[str],
         agent = agents[0]
         agent_name = _get_display_name(agent)
         print(f"Auto-selected only available agent: {agent_name}", file=sys.stderr)
-        set_default(agent_name)
+        set_default(agent_name, agent)
         return agent
     
     # Check if default agent exists
@@ -215,9 +215,9 @@ def select_agent(agents: List[AgentSettings], default_agent_name: Optional[str],
             if 0 <= idx < len(agents):
                 selected = agents[idx]
                 agent_name = _get_display_name(selected)
-                
+
                 # Save as default
-                set_default(agent_name)
+                set_default(agent_name, selected)
                 print(f"Selected: {agent_name}", file=sys.stderr)
                 return selected
             else:

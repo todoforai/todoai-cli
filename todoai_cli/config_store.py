@@ -107,8 +107,11 @@ class TODOCLIConfig:
         self.data["recent_projects"] = recent[:10]
         self.save_config()
     
-    def set_default_agent(self, agent_name: str):
+    def set_default_agent(self, agent_name: str, agent_settings: dict = None):
+        from datetime import datetime, timezone
         self.data["default_agent_name"] = agent_name
+        self.data["default_agent_settings"] = agent_settings
+        self.data["default_agent_settings_updated_at"] = datetime.now(timezone.utc).isoformat()
         recent = self.data.get("recent_agents", [])
         if agent_name not in recent:
             recent.insert(0, agent_name)

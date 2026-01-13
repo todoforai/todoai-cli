@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 TODOforAI CLI - Create todos from piped input
-Usage: echo "todo content" | todoai_cli [options]
+Usage: echo "todo content" | todoai [options]
 """
 
 import argparse
@@ -12,15 +12,14 @@ import uuid
 import signal
 from typing import Optional, List, Dict, Any
 
-# Try to import todoforai_edge components
-# Note: The heavy lifting for edge initialization and config is now handled in internal modules.
 from todoforai_edge.utils import findBy
 from todoforai_edge.types import ProjectListItem, AgentSettings
+from todoforai_edge.frontend_ws import TodoStreamError
 
-# New internal modules
 from .config_store import TODOCLIConfig
 from .edge_client import init_edge
 from .project_selectors import select_project, select_agent, _get_display_name, _get_item_id, _get_terminal_input, _get_single_char_input
+from .prompt_input import create_session, get_interactive_input
 
 def _exit_on_sigint(signum, frame):
     """Handle SIGINT (Ctrl+C) by exiting with a message and code 130."""
@@ -32,12 +31,13 @@ class TODOCLITool:
         self.config = config
         self.edge = None
     
-    async def init_edge(self, api_url: Optional[str] = None):
-        """Initialize TODOforAI Edge client (validates API key)"""
+    async def init_edge(self, api_url: Optional[str] = None, skip_validation: bool = False):
+        """Initialize TODOforAI Edge client"""
         self.edge = await init_edge(
-            api_url, 
+            api_url,
             self.config.data.get("default_api_url"),
-            self.config.data.get("default_api_key")
+            self.config.data.get("default_api_key"),
+            skip_validation=skip_validation
         )
     
     def read_stdin(self) -> str:
@@ -121,20 +121,110 @@ class TODOCLITool:
             return "cancel"
     
     async def create_todo(self, content: str, project_id: str, agent: AgentSettings) -> Dict[str, Any]:
-        """Create a new TODO"""
         try:
-            todo = await self.edge.add_message(
+            return await self.edge.add_message(
                 project_id=project_id,
                 content=content,
                 agent_settings=agent
             )
-            return todo
         except Exception as e:
             print(f"❌ Error creating TODO: {e}", file=sys.stderr)
             sys.exit(1)
+
+    async def watch_todo(self, todo_id: str, timeout: int, json_output: bool):
+        ignore = {
+            "todo:msg_start", "todo:msg_done", "todo:msg_error", "todo:msg_stop_sequence",
+            "todo:msg_meta_ai", "todo:status", "block:end",
+            "block:start_text", "block:start_shell", "block:start_createfile",
+            "block:start_modifyfile", "block:start_mcp",
+        }
+
+        def on_message(msg_type: str, payload: Dict[str, Any]):
+            if msg_type == "block:message":
+                sys.stdout.write(payload.get("content", ""))
+                sys.stdout.flush()
+            elif msg_type == "block:start_universal":
+                skip = {"userId", "messageId", "todoId", "blockId", "block_type"}
+                block_type = payload.get("block_type", "UNIVERSAL")
+                info = {k: v for k, v in payload.items() if k not in skip}
+                parts = [f"{k}={v}" for k, v in info.items()]
+                extra = f" {' '.join(parts)}" if parts else ""
+                print(f"\n\033[32m●\033[0m {block_type}{extra}", file=sys.stderr)
+            elif msg_type not in ignore:
+                print(f"[{msg_type}]", file=sys.stderr)
+
+        try:
+            result = await self.edge.wait_for_todo_completion(todo_id, timeout, on_message)
+            print()  # newline after streaming
+            if not result.get("success"):
+                msg_type = result.get("type", "unknown")
+                if msg_type == "todo:msg_error":
+                    print(f"❌ Error: {result.get('payload', {}).get('error', 'unknown')}", file=sys.stderr)
+                else:
+                    print(f"⚠️  Stopped: {msg_type}", file=sys.stderr)
+        except TodoStreamError as e:
+            print(f"❌ Stream error: {e}", file=sys.stderr)
+            sys.exit(1)
+        except asyncio.TimeoutError:
+            print(f"\n⏱️  Timeout after {timeout}s", file=sys.stderr)
+            sys.exit(1)
     
+    async def resume_todo(self, todo_id: str, timeout: int, json_output: bool):
+        """Resume an existing todo - show history and enter interactive mode"""
+        # Fetch existing todo with messages
+        todo = await self.edge.get_todo(todo_id)
+        project_id = todo.get("projectId")
+        agent = todo.get("agentSettings") or {"name": "default"}
+
+        # Display existing messages
+        messages = todo.get("messages", [])
+        for msg in messages:
+            role = msg.get("role", "unknown")
+            blocks = msg.get("blocks", [])
+
+            if role == "user":
+                print(f"\033[34m●\033[0m {msg.get('content', '')[:100]}...", file=sys.stderr)
+            else:
+                for block in blocks:
+                    block_type = block.get("type", "TEXT")
+                    content = block.get("content", "")
+                    if block_type == "TEXT" and content:
+                        # Show truncated preview
+                        preview = content[:200] + "..." if len(content) > 200 else content
+                        print(preview)
+
+        print("\n" + "─" * 40, file=sys.stderr)
+        print(f"Resumed todo: {todo_id}", file=sys.stderr)
+
+        # Interactive loop with prompt_toolkit
+        session = create_session()
+        while True:
+            try:
+                follow_up = await get_interactive_input(session)
+                if not follow_up:
+                    continue
+                if follow_up in ("/help", "?"):
+                    print("  /exit, /quit, /q  - quit", file=sys.stderr)
+                    print("  /help, ?          - show this help", file=sys.stderr)
+                    print("  Tab               - show completions", file=sys.stderr)
+                    print("  Arrow Right       - accept suggestion", file=sys.stderr)
+                    continue
+                if follow_up in ("/exit", "/quit", "/q", "q", "exit"):
+                    break
+
+                print("─" * 40, file=sys.stderr)
+                await self.edge.add_message(
+                    project_id=project_id,
+                    content=follow_up,
+                    agent_settings=agent,
+                    todo_id=todo_id,
+                    allow_queue=True
+                )
+                await self.watch_todo(todo_id, timeout, json_output)
+            except (KeyboardInterrupt, EOFError):
+                break
+
     def _get_frontend_url(self, project_id: str, todo_id: str) -> str:
-        """Generate frontend URL based on API URL"""
         api_url = self.edge.api_url
         
         # Map API URLs to frontend URLs
@@ -299,7 +389,7 @@ class TODOCLITool:
                         if 0 <= idx < len(agents):
                             agent = agents[idx]
                             agent_name = _get_display_name(agent)
-                            self.config.set_default_agent(agent_name)
+                            self.config.set_default_agent(agent_name, agent)
                             print(f"✅ Default agent set to: {agent_name}", file=sys.stderr)
                             break
                         else:
@@ -340,17 +430,27 @@ class TODOCLITool:
     async def run(self, args):
         """Main execution"""
         # Init edge with URL priority: --api-url > env (inside Edge Config) > config default > package default
-        await self.init_edge(args.api_url)
-        
+        await self.init_edge(args.api_url, skip_validation=not args.safe)
+
         # Read content from stdin
         content = self.read_stdin()
-        
-        # Get projects and agents
-        projects = await self.get_projects()
-        agents = await self.get_agents()
-        
+
+        # Check if we can skip fetching lists (have defaults or CLI args)
+        has_project = args.project or self.config.data.get("default_project_id")
+        # For agent, we need full settings with id - name alone isn't enough
+        # If --agent flag provided, we must fetch to get full settings
+        stored_agent = self.config.data.get("default_agent_settings")
+        has_agent = (stored_agent and stored_agent.get("id")) and not args.agent
+
+        # Only fetch lists if needed for selection (or --safe mode)
+        projects = None
+        agents = None
+        if not has_project or not has_agent or args.safe or args.debug:
+            projects = await self.get_projects()
+            agents = await self.get_agents()
+
         # Remove DEBUG prints for cleaner output
-        if args.debug:
+        if args.debug and projects and agents:
             print("DEBUG - Projects structure:", file=sys.stderr)
             for i, project in enumerate(projects[:2]):  # Only first 2 to avoid spam
                 print(f"Project {i}: {json.dumps(project, indent=2)}", file=sys.stderr)
@@ -358,24 +458,32 @@ class TODOCLITool:
             for i, agent in enumerate(agents[:2]):  # Only first 2 to avoid spam
                 print(f"Agent {i}: {json.dumps(agent, indent=2)}", file=sys.stderr)
             print("="*50, file=sys.stderr)
-        
+
         while True:
             # Select project
             if args.project:
-                project = findBy(projects, lambda p: _get_item_id(p) == args.project)
-                if not project:
-                    print(f"❌ Project ID '{args.project}' not found", file=sys.stderr)
-                    sys.exit(1)
-                project_id, project_name = _get_item_id(project), _get_display_name(project)
+                if projects:
+                    project = findBy(projects, lambda p: _get_item_id(p) == args.project)
+                    if not project:
+                        print(f"❌ Project ID '{args.project}' not found", file=sys.stderr)
+                        sys.exit(1)
+                    project_id, project_name = _get_item_id(project), _get_display_name(project)
+                else:
+                    project_id, project_name = args.project, args.project
+            elif self.config.data.get("default_project_id") and not projects:
+                # Fast path: use default without fetching list
+                project_id = self.config.data.get("default_project_id")
+                project_name = self.config.data.get("default_project_name") or project_id
             else:
                 project_id, project_name = select_project(
                     projects,
                     default_project_id=self.config.data.get("default_project_id"),
                     set_default=self.config.set_default_project
                 )
-            
+
             # Select agent
             if args.agent:
+                # --agent flag requires fetching list to get full settings with id
                 agent = findBy(agents, lambda a: args.agent.lower() in _get_display_name(a).lower())
                 if not agent:
                     print(f"❌ Agent '{args.agent}' not found", file=sys.stderr)
@@ -383,6 +491,11 @@ class TODOCLITool:
                     for a in agents:
                         print(f"  - {_get_display_name(a)}", file=sys.stderr)
                     sys.exit(1)
+                # Save as default for next time
+                self.config.set_default_agent(_get_display_name(agent), agent)
+            elif stored_agent and stored_agent.get("id") and not agents:
+                # Fast path: use stored settings with valid id
+                agent = stored_agent
             else:
                 agent = select_agent(
                     agents,
@@ -435,30 +548,57 @@ class TODOCLITool:
         
         # Output result
         if args.json:
-            # Add URL to JSON output
             todo_with_url = todo.copy()
             todo_with_url['frontend_url'] = frontend_url
             print(json.dumps(todo_with_url, indent=2))
         else:
-            print(f"✅ TODO created successfully!", file=sys.stderr)
-            print(f"   Project: {project_name}", file=sys.stderr)
-            print(f"   Agent: {_get_display_name(agent)}", file=sys.stderr)
-            print(f"   URL: {frontend_url}", file=sys.stderr)
+            print(f"✅ TODO created: {frontend_url}", file=sys.stderr)
+
+        # Watch for completion (default behavior)
+        if not args.no_watch:
+            await self.watch_todo(actual_todo_id, args.timeout, args.json)
+
+        # Interactive mode - continue conversation
+        if args.interactive and not args.no_watch:
+            print("\n" + "─" * 40, file=sys.stderr)
+            session = create_session()
+            while True:
+                try:
+                    follow_up = await get_interactive_input(session)
+                    if not follow_up:
+                        continue
+                    if follow_up in ("/help", "?"):
+                        print("  /exit, /quit, /q  - quit", file=sys.stderr)
+                        print("  /help, ?          - show this help", file=sys.stderr)
+                        print("  Tab               - show completions", file=sys.stderr)
+                        print("  Arrow Right       - accept suggestion", file=sys.stderr)
+                        continue
+                    if follow_up in ("/exit", "/quit", "/q", "q", "exit"):
+                        break
+
+                    # Send follow-up message to same todo
+                    print("─" * 40, file=sys.stderr)
+                    await self.edge.add_message(
+                        project_id=project_id,
+                        content=follow_up,
+                        agent_settings=agent,
+                        todo_id=actual_todo_id,
+                        allow_queue=True
+                    )
+                    await self.watch_todo(actual_todo_id, args.timeout, args.json)
+                except (KeyboardInterrupt, EOFError):
+                    break
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Create TODOs from piped input",
+        description="Create TODOs and stream results",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  echo "Research AI trends" | todoai_cli
-  cat task.txt | todoai_cli --project abc123 --agent "gmail"
-  echo "Debug issue" | todoai_cli --todo-id custom-id --json
-  echo "Quick task" | todoai_cli -y  # Skip confirmation
-  
-Environment Variables:
-  TODOFORAI_API_KEY    Your TODOforAI API key (required)
-  TODOFORAI_API_URL    API URL (default: https://api.todofor.ai)
+  echo "Research AI trends" | todoai        # Creates and watches
+  echo "Quick task" | todoai -y             # Skip confirmation
+  echo "Fire and forget" | todoai --no-watch
+  echo "Long task" | todoai --timeout 600   # 10 min timeout
         """
     )
     # Ensure first Ctrl+C exits immediately with a message (exit code 130 = SIGINT)
@@ -467,11 +607,16 @@ Environment Variables:
     parser.add_argument('--project', '-p', help='Project ID (will prompt if not provided)')
     parser.add_argument('--agent', '-a', help='Agent name (partial match, will prompt if not provided)')
     parser.add_argument('--todo-id', help='Custom TODO ID (auto-generated if not provided)')
+    parser.add_argument('--resume', '-r', metavar='TODO_ID', help='Resume existing todo')
     parser.add_argument('--api-url', help='API URL (overrides environment and saved default)')
     parser.add_argument('--json', action='store_true', help='Output result as JSON')
     parser.add_argument('--yes', '-y', action='store_true', help='Skip confirmation prompt')
+    parser.add_argument('--no-watch', action='store_true', help='Create todo and exit without watching for completion')
+    parser.add_argument('-i', '--interactive', action='store_true', help='Stay in interactive mode after completion')
+    parser.add_argument('--timeout', type=int, default=300, help='Watch timeout in seconds (default: 300)')
+    parser.add_argument('--safe', action='store_true', help='Validate API key and fetch lists upfront')
     parser.add_argument('--debug', action='store_true', help='Enable debug output')
-    parser.add_argument('--config-path', metavar='PATH', help='Use specific config file path (overrides default)')
+    parser.add_argument('--config-path', metavar='PATH', help='Custom config file path')
     
     # Config management
     config_group = parser.add_argument_group('configuration')

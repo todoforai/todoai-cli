@@ -25,6 +25,7 @@ setup(
     python_requires=">=3.10",
     install_requires=[
         "todoforai-edge-cli>=0.1.0",
+        "prompt_toolkit>=3.0.0",
     ],
     entry_points={
         "console_scripts": [
