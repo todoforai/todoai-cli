@@ -20,6 +20,7 @@ from .config_store import TODOCLIConfig
 from .edge_client import init_edge
 from .project_selectors import select_project, select_agent, _get_display_name, _get_item_id, _get_terminal_input, _get_single_char_input
 from .prompt_input import create_session, get_interactive_input
+from .message_display import MessageDisplay
 
 def _exit_on_sigint(signum, frame):
     """Handle SIGINT (Ctrl+C) by exiting with a message and code 130."""
@@ -27,9 +28,10 @@ def _exit_on_sigint(signum, frame):
     sys.exit(130)
 
 class TODOCLITool:
-    def __init__(self, config: TODOCLIConfig):
+    def __init__(self, config: TODOCLIConfig, message_display: MessageDisplay = None):
         self.config = config
         self.edge = None
+        self.message_display = message_display or MessageDisplay()
     
     async def init_edge(self, api_url: Optional[str] = None, skip_validation: bool = False):
         """Initialize TODOforAI Edge client"""
@@ -198,20 +200,7 @@ class TODOCLITool:
 
         # Display existing messages
         messages = todo.get("messages", [])
-        for msg in messages:
-            role = msg.get("role", "unknown")
-            blocks = msg.get("blocks", [])
-
-            if role == "user":
-                print(f"\033[34m●\033[0m {msg.get('content', '')[:100]}...", file=sys.stderr)
-            else:
-                for block in blocks:
-                    block_type = block.get("type", "TEXT")
-                    content = block.get("content", "")
-                    if block_type == "TEXT" and content:
-                        # Show truncated preview
-                        preview = content[:200] + "..." if len(content) > 200 else content
-                        print(preview)
+        self.message_display.display_messages(messages)
 
         print("\n" + "─" * 40, file=sys.stderr)
         print(f"Resumed todo: {todo_id}", file=sys.stderr)
@@ -565,7 +554,7 @@ class TODOCLITool:
         # Get the actual todo ID from response
         actual_todo_id = todo.get('id', todo_id)
         frontend_url = self._get_frontend_url(project_id, actual_todo_id)
-        
+
         # Output result
         if args.json:
             todo_with_url = todo.copy()
@@ -689,6 +678,15 @@ Examples:
     
     # Main execution
     tool = TODOCLITool(cfg)
+
+    # Handle --resume flag
+    if args.resume:
+        async def run_resume():
+            await tool.init_edge(args.api_url, skip_validation=not args.safe)
+            await tool.resume_todo(args.resume, args.timeout, args.json)
+        asyncio.run(run_resume())
+        return
+
     asyncio.run(tool.run(args))
 
 if __name__ == "__main__":
