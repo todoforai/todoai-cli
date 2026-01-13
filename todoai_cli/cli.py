@@ -155,23 +155,18 @@ class TODOCLITool:
                 print(f"[{msg_type}]", file=sys.stderr)
 
         # Set up interrupt handling
-        interrupted = False
         watch_task = None
 
         def handle_interrupt():
-            nonlocal interrupted
-            if not interrupted:
-                interrupted = True
-                print("\n\033[33m⚡ Sending interrupt signal...\033[0m", file=sys.stderr)
-                if watch_task:
-                    watch_task.cancel()
+            print("\n\033[33m⚡ Interrupting...\033[0m", file=sys.stderr)
+            if watch_task:
+                watch_task.cancel()
 
-        # Temporarily override SIGINT handler
         old_handler = signal.signal(signal.SIGINT, lambda s, f: handle_interrupt())
 
         try:
             watch_task = asyncio.create_task(
-                self.edge.wait_for_todo_completion(todo_id, timeout, on_message)
+                self.edge.wait_for_todo_completion(todo_id, timeout, on_message, project_id)
             )
             result = await watch_task
             print()  # newline after streaming
@@ -183,8 +178,6 @@ class TODOCLITool:
                     print(f"⚠️  Stopped: {msg_type}", file=sys.stderr)
             return True
         except asyncio.CancelledError:
-            # Send interrupt to backend
-            await self.edge.interrupt_todo(project_id, todo_id)
             print("\033[33m⚡ Interrupted\033[0m", file=sys.stderr)
             return False
         except TodoStreamError as e:
