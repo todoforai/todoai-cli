@@ -86,14 +86,19 @@ class TODOCLIConfig:
         """Persist configuration to file with secure permissions"""
         try:
             self.config_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Create a copy for saving with obfuscated API key
             save_data = self.data.copy()
             if save_data.get("default_api_key"):
                 save_data["default_api_key"] = _simple_obfuscate(save_data["default_api_key"])
-            
+
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 json.dump(save_data, f, indent=2, ensure_ascii=False)
+
+            # Set secure permissions (owner read/write only) on Unix systems
+            # This protects the API key from being read by other users
+            if platform.system() != "Windows":
+                self.config_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
         except OSError:
             pass
