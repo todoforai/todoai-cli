@@ -32,7 +32,7 @@ async def init_edge(cli_api_url: Optional[str], saved_default_api_url: Optional[
 
     if not cfg.api_key:
         print("❌ Please set TODOFORAI_API_KEY (or TODO4AI_API_KEY) environment variable", file=sys.stderr)
-        print("   Or use: todoai_cli --set-default-api-key YOUR_API_KEY", file=sys.stderr)
+        print("   Or use: todoai-cli --set-default-api-key YOUR_API_KEY", file=sys.stderr)
         sys.exit(1)
 
     edge = TODOforAIEdge(cfg)

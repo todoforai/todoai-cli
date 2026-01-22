@@ -29,7 +29,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "todoai_cli=todoai_cli.cli:main",
+            "todoai-cli=todoai_cli.cli:main",
         ],
     },
 )

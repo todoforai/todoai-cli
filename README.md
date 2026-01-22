@@ -32,20 +32,20 @@ export TODOFORAI_API_KEY=your_api_key_here
 ### Basic Usage
 
 ```bash
-echo "Debug authentication issue" | todoai_cli
+echo "Debug authentication issue" | todoai-cli
 ```
 
 ### With Options
 
 ```bash
 # Specify agent and skip confirmation
-echo "Send email to client" | todoai_cli --agent "gmail" -y
+echo "Send email to client" | todoai-cli --agent "gmail" -y
 
 # Custom TODO ID
-echo "Weekly report" | todoai_cli --todo-id weekly-report-2024-01
+echo "Weekly report" | todoai-cli --todo-id weekly-report-2024-01
 
 # JSON output for scripting
-echo "API task" | todoai_cli --json
+echo "API task" | todoai-cli --json
 ```
 
 ### Configuration
@@ -54,27 +54,27 @@ Set defaults to avoid repeated prompting:
 
 ```bash
 # Set default project and agent
-todoai_cli --set-default-project abc123
-todoai_cli --set-default-agent "todoforai gmail"
+todoai-cli --set-default-project abc123
+todoai-cli --set-default-agent "todoforai gmail"
 
 # Now you can just pipe content
-echo "Quick task" | todoai_cli -y
+echo "Quick task" | todoai-cli -y
 ```
 
 ### Examples
 
 ```bash
 # From file
-cat task_description.txt | todoai_cli
+cat task_description.txt | todoai-cli
 
 # From clipboard (macOS)
-pbpaste | todoai_cli --agent "gmail"
+pbpaste | todoai-cli --agent "gmail"
 
 # From git commit
-git log -1 --pretty=%B | todoai_cli --agent "code review"
+git log -1 --pretty=%B | todoai-cli --agent "code review"
 
 # Multi-line with confirmation
-cat << EOF | todoai_cli
+cat << EOF | todoai-cli
 Research the following:
 1. AI safety regulations  
 2. GDPR compliance
@@ -92,7 +92,7 @@ Default locations (if --config-path is not used):
 
 Override with:
 ```bash
-todoai_cli --config-path /custom/path/config.json
+todoai-cli --config-path /custom/path/config.json
 ```
 
 ## Command Line Options
@@ -112,7 +112,7 @@ todoai_cli --config-path /custom/path/config.json
 
 ## Features
 
-- ✅ **Global installation**: Available as `todoai_cli` command
+- ✅ **Global installation**: Available as `todoai-cli` command
 - ✅ **Cross-platform config**: Proper config locations for Windows/macOS/Linux
 - ✅ **Clean imports**: Simple, reliable package imports
 - ✅ **Flexible API URL**: Environment variables, CLI args, or saved config
