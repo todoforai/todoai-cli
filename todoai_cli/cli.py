@@ -170,7 +170,7 @@ class TODOCLITool:
 
         try:
             watch_task = asyncio.create_task(
-                self.edge.wait_for_todo_completion(todo_id, timeout, on_message, project_id)
+                self.edge.wait_for_todo_completion(todo_id, timeout, on_message)
             )
             result = await watch_task
             print()  # newline after streaming

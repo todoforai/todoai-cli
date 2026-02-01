@@ -147,15 +147,16 @@ class TerminalBenchRunner:
         if self.provider == "anthropic":
             model_map = {
                 # Claude 4.5 models
-                "claude-sonnet-4-5": "claude-sonnet-4-5-20250514",
+                "claude-sonnet-4-5": "claude-sonnet-4-5-20250929",
                 "claude-opus-4-5": "claude-opus-4-5-20251101",
-                "sonnet": "claude-sonnet-4-5-20250514",
+                "claude-haiku-4-5": "claude-haiku-4-5-20251001",
+                "sonnet": "claude-sonnet-4-5-20250929",
                 "opus": "claude-opus-4-5-20251101",
+                "haiku": "claude-haiku-4-5-20251001",
                 # Claude 3.5 models (older)
                 "claude-3-5-sonnet": "claude-3-5-sonnet-20241022",
                 "claude-3-5-haiku": "claude-3-5-haiku-20241022",
                 "sonnet-3.5": "claude-3-5-sonnet-20241022",
-                "haiku": "claude-3-5-haiku-20241022",
             }
             mapped = model_map.get(self.model, self.model)
             # If model not found and doesn't look like a full ID, use opus as default
@@ -231,14 +232,7 @@ class TerminalBenchRunner:
 
             print(response, file=sys.stderr)
 
-            if "TASK_COMPLETE:" in response:
-                print("\n✅ Task completed", file=sys.stderr)
-                break
-            elif "TASK_FAILED:" in response:
-                failure_mode = "agent_declared_failure"
-                print("\n❌ Task failed (agent declared)", file=sys.stderr)
-                break
-
+            # First try to extract and execute a command
             command = self._extract_command(response)
 
             if command:
@@ -256,6 +250,14 @@ class TerminalBenchRunner:
                     "role": "user",
                     "content": f"Command output:\n```\n{output}\n```"
                 })
+            # Only check for completion/failure when no command was found
+            elif "TASK_COMPLETE:" in response:
+                print("\n✅ Task completed", file=sys.stderr)
+                break
+            elif "TASK_FAILED:" in response:
+                failure_mode = "agent_declared_failure"
+                print("\n❌ Task failed (agent declared)", file=sys.stderr)
+                break
             else:
                 messages.append({
                     "role": "user",
