@@ -1,15 +1,51 @@
 """Rich input handling with prompt_toolkit."""
 
-import sys
+import atexit
 from pathlib import Path
+from typing import Optional
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.input import create_input
+from prompt_toolkit.input.base import Input
 
 COMMANDS = ["/help", "/exit", "/quit", "/q"]
+
+# Module-level tracking for cleanup
+_tty_file = None
+_tty_input: Optional[Input] = None
+
+
+def _cleanup_tty() -> None:
+    """Close the tty file handle on exit."""
+    global _tty_file
+    if _tty_file is not None:
+        try:
+            _tty_file.close()
+        except Exception:
+            pass
+        _tty_file = None
+
+
+# Register cleanup at module load
+atexit.register(_cleanup_tty)
+
+
+def _get_tty_input() -> Optional[Input]:
+    """Get or create the tty input, reusing if already open."""
+    global _tty_file, _tty_input
+
+    if _tty_input is not None:
+        return _tty_input
+
+    try:
+        _tty_file = open("/dev/tty", "r")
+        _tty_input = create_input(stdin=_tty_file)
+        return _tty_input
+    except (OSError, FileNotFoundError):
+        return None
 
 
 def create_session() -> PromptSession:
@@ -18,12 +54,7 @@ def create_session() -> PromptSession:
     history_path.parent.mkdir(parents=True, exist_ok=True)
 
     completer = WordCompleter(COMMANDS, ignore_case=True)
-
-    # Use /dev/tty for input when stdin is piped
-    try:
-        tty_input = create_input(stdin=open("/dev/tty", "r"))
-    except (OSError, FileNotFoundError):
-        tty_input = None
+    tty_input = _get_tty_input()
 
     return PromptSession(
         completer=completer,
@@ -31,6 +62,11 @@ def create_session() -> PromptSession:
         history=FileHistory(str(history_path)),
         input=tty_input,
     )
+
+
+def close_session() -> None:
+    """Explicitly close tty resources. Called automatically on exit."""
+    _cleanup_tty()
 
 
 async def get_interactive_input(session: PromptSession, prompt: str = "\u276f ") -> str:

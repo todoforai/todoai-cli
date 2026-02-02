@@ -684,22 +684,23 @@ Examples:
             print(f"✅ Default API key set")
         return
 
-    # Terminal-Bench mode - special execution path
+    # Terminal-Bench mode - special execution path (sync, doesn't need asyncio)
     if args.terminal_bench:
         sys.exit(run_terminal_bench_mode(args))
 
-    # Main execution
+    # Main async execution
+    asyncio.run(_async_main(cfg, args))
+
+
+async def _async_main(cfg: TODOCLIConfig, args: argparse.Namespace) -> None:
+    """Async entry point for the main CLI workflow."""
     tool = TODOCLITool(cfg)
 
-    # Handle --resume flag
     if args.resume:
-        async def run_resume():
-            await tool.init_edge(args.api_url, skip_validation=not args.safe)
-            await tool.resume_todo(args.resume, args.timeout, args.json)
-        asyncio.run(run_resume())
-        return
-
-    asyncio.run(tool.run(args))
+        await tool.init_edge(args.api_url, skip_validation=not args.safe)
+        await tool.resume_todo(args.resume, args.timeout, args.json)
+    else:
+        await tool.run(args)
 
 if __name__ == "__main__":
     main()
