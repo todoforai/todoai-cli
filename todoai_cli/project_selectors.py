@@ -110,7 +110,7 @@ def _get_single_char_input(prompt: str) -> str:
 def select_project(projects: List[ProjectListItem], default_project_id: Optional[str], set_default: Callable[[str, str], None]) -> Tuple[str, str]:
     """Interactive project selection with default and recent support"""
     if not projects:
-        print("❌ No projects available", file=sys.stderr)
+        print("Error: No projects available", file=sys.stderr)
         sys.exit(1)
     
     # Auto-select if only one project
@@ -156,7 +156,7 @@ def select_project(projects: List[ProjectListItem], default_project_id: Optional
                 project_name = _get_display_name(selected)
                 
                 if not project_id:
-                    print("❌ Selected project has no ID", file=sys.stderr)
+                    print("Error: Selected project has no ID", file=sys.stderr)
                     continue
                 
                 # Save as default
@@ -169,14 +169,14 @@ def select_project(projects: List[ProjectListItem], default_project_id: Optional
         except ValueError:
             print("Please enter a valid number", file=sys.stderr)
         except (KeyboardInterrupt, EOFError):
-            print("\n❌ Cancelled", file=sys.stderr)
+            print("\nCancelled", file=sys.stderr)
             sys.exit(1)
 
 
 def select_agent(agents: List[AgentSettings], default_agent_name: Optional[str], set_default: Callable[[str, dict], None]) -> AgentSettings:
     """Interactive agent selection with default support (partial name match)"""
     if not agents:
-        print("❌ No agents available", file=sys.stderr)
+        print("Error: No agents available", file=sys.stderr)
         sys.exit(1)
     
     # Auto-select if only one agent
@@ -226,5 +226,5 @@ def select_agent(agents: List[AgentSettings], default_agent_name: Optional[str],
         except ValueError:
             print("Please enter a valid number", file=sys.stderr)
         except (KeyboardInterrupt, EOFError):
-            print("\n❌ Cancelled", file=sys.stderr)
+            print("\nCancelled", file=sys.stderr)
             sys.exit(1)

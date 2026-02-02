@@ -82,11 +82,11 @@ class MessageDisplay:
     def render_user_message(self, msg: Dict[str, Any]) -> str:
         """Render a user message."""
         content = msg.get("content", "")
-        return f"\n{BLUE}● User:{RESET} {content}"
+        return f"\n{BLUE}* User:{RESET} {content}"
 
     def render_assistant_message(self, msg: Dict[str, Any]) -> List[str]:
         """Render an assistant message, returns list of lines."""
-        lines = [f"\n{GREEN}● Assistant:{RESET}"]
+        lines = [f"\n{GREEN}* Assistant:{RESET}"]
         blocks = msg.get("blocks", [])
 
         for block in blocks:
@@ -104,7 +104,7 @@ class MessageDisplay:
         if not messages:
             return
 
-        print(f"\n📜 Previous messages ({len(messages)}):", file=file)
+        print(f"\nPrevious messages ({len(messages)}):", file=file)
         print("─" * 40, file=file)
 
         for msg in messages:

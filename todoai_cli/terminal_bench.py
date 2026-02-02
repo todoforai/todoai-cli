@@ -129,17 +129,17 @@ class TerminalBenchRunner:
                 import anthropic
                 self.client = anthropic.Anthropic()
             except ImportError:
-                print("❌ anthropic package required: pip install anthropic", file=sys.stderr)
+                print("Error: anthropic package required: pip install anthropic", file=sys.stderr)
                 sys.exit(1)
         elif provider == "openai":
             try:
                 import openai
                 self.client = openai.OpenAI()
             except ImportError:
-                print("❌ openai package required: pip install openai", file=sys.stderr)
+                print("Error: openai package required: pip install openai", file=sys.stderr)
                 sys.exit(1)
         else:
-            print(f"❌ Unknown provider: {provider}", file=sys.stderr)
+            print(f"Error: Unknown provider: {provider}", file=sys.stderr)
             sys.exit(1)
 
     def _get_model_id(self) -> str:
@@ -221,7 +221,7 @@ class TerminalBenchRunner:
         failure_mode = None
         commands_executed = []
 
-        print(f"🚀 Starting Terminal-Bench task...", file=sys.stderr)
+        print(f"Starting Terminal-Bench task...", file=sys.stderr)
         print(f"   Model: {self._get_model_id()}", file=sys.stderr)
         print(f"   Session: {tmux.session_id}", file=sys.stderr)
         print("─" * 40, file=sys.stderr)
@@ -252,11 +252,11 @@ class TerminalBenchRunner:
                 })
             # Only check for completion/failure when no command was found
             elif "TASK_COMPLETE:" in response:
-                print("\n✅ Task completed", file=sys.stderr)
+                print("\nTask completed", file=sys.stderr)
                 break
             elif "TASK_FAILED:" in response:
                 failure_mode = "agent_declared_failure"
-                print("\n❌ Task failed (agent declared)", file=sys.stderr)
+                print("\nTask failed (agent declared)", file=sys.stderr)
                 break
             else:
                 messages.append({
@@ -265,11 +265,11 @@ class TerminalBenchRunner:
                 })
         else:
             failure_mode = "max_iterations"
-            print(f"\n⚠️ Max iterations ({self.max_iterations}) reached", file=sys.stderr)
+            print(f"\nWarning: Max iterations ({self.max_iterations}) reached", file=sys.stderr)
 
         print("─" * 40, file=sys.stderr)
-        print(f"📊 Tokens: {self.input_tokens} in / {self.output_tokens} out", file=sys.stderr)
-        print(f"📋 Commands executed: {len(commands_executed)}", file=sys.stderr)
+        print(f"Tokens: {self.input_tokens} in / {self.output_tokens} out", file=sys.stderr)
+        print(f"Commands executed: {len(commands_executed)}", file=sys.stderr)
 
         return {
             "input_tokens": self.input_tokens,
@@ -284,17 +284,17 @@ def run_terminal_bench_mode(args) -> int:
     """Run in Terminal-Bench mode."""
     session_id = os.environ.get("TBENCH_SESSION_ID")
     if not session_id:
-        print("❌ TBENCH_SESSION_ID environment variable not set", file=sys.stderr)
+        print("Error: TBENCH_SESSION_ID environment variable not set", file=sys.stderr)
         print("   This mode is for use with Terminal-Bench harness", file=sys.stderr)
         return 1
 
     if sys.stdin.isatty():
-        print("❌ Task must be piped via stdin", file=sys.stderr)
+        print("Error: Task must be piped via stdin", file=sys.stderr)
         return 1
 
     task_description = sys.stdin.read().strip()
     if not task_description:
-        print("❌ Empty task description", file=sys.stderr)
+        print("Error: Empty task description", file=sys.stderr)
         return 1
 
     model = os.environ.get("TODOFORAI_MODEL", getattr(args, 'model', None) or "claude-sonnet-4-5")

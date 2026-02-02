@@ -51,14 +51,14 @@ def update_version_files(new_version):
     content = re.sub(r'version="[^"]+"', f'version="{new_version}"', content)
     setup_file.write_text(content)
     
-    print(f"✅ Updated version to {new_version}")
+    print(f"Updated version to {new_version}")
 
 def run_command(cmd, check=True):
     """Run shell command"""
-    print(f"🔄 Running: {cmd}")
+    print(f"Running: {cmd}")
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     if check and result.returncode != 0:
-        print(f"❌ Command failed: {cmd}")
+        print(f"Error: Command failed: {cmd}")
         print(f"Error: {result.stderr}")
         sys.exit(1)
     return result
@@ -84,14 +84,14 @@ def main():
     print(f"New version: {new_version}")
     
     if args.dry_run:
-        print("🔍 DRY RUN - No changes will be made")
+        print("DRY RUN - No changes will be made")
         return
     
     # Confirm deployment (skip in CI)
     if not args.auto_confirm:
         response = input(f"\nDeploy version {new_version}? (y/N): ").strip().lower()
         if response != 'y':
-            print("❌ Deployment cancelled")
+            print("Deployment cancelled")
             return
     
     try:
@@ -107,7 +107,7 @@ def main():
             print("🧪 Running tests...")
             result = run_command("python -m pytest", check=False)
             if result.returncode != 0:
-                print("⚠️  Tests failed, but continuing deployment...")
+                print("Warning: Tests failed, but continuing deployment...")
         
         # Build package
         print("🔨 Building package...")
@@ -115,11 +115,11 @@ def main():
         
         # Upload to PyPI (skip in CI - handled by workflow)
         if not args.auto_confirm:
-            print("🚀 Uploading to PyPI...")
+            print("Uploading to PyPI...")
             run_command("python -m twine upload dist/*")
         
         # Git operations
-        print("📝 Creating git commit and tag...")
+        print("Creating git commit and tag...")
         run_command(f"git add -A")
         run_command(f'git commit -m "Release v{new_version}"')
         run_command(f"git tag v{new_version}")
@@ -128,12 +128,12 @@ def main():
             run_command("git push origin main")
             run_command("git push origin --tags")
         
-        print(f"✅ Successfully prepared todoai-cli v{new_version}")
+        print(f"Successfully prepared todoai-cli v{new_version}")
         if not args.auto_confirm:
             print(f"📦 Package available at: https://pypi.org/project/todoai-cli/{new_version}/")
         
     except Exception as e:
-        print(f"❌ Deployment failed: {e}")
+        print(f"Error: Deployment failed: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

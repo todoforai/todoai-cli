@@ -25,7 +25,7 @@ from .terminal_bench import run_terminal_bench_mode
 
 def _exit_on_sigint(signum, frame):
     """Handle SIGINT (Ctrl+C) by exiting with a message and code 130."""
-    print("\n❌ Cancelled by user (Ctrl+C)", file=sys.stderr)
+    print("\nCancelled by user (Ctrl+C)", file=sys.stderr)
     sys.exit(130)
 
 
@@ -48,7 +48,7 @@ class TODOCLITool:
         """Read content from stdin or prompt for interactive input"""
         if sys.stdin.isatty():
             # Interactive mode - prompt user for input
-            print("📝 Enter your TODO content (press Ctrl+D when done, or Ctrl+C to cancel):", file=sys.stderr)
+            print("Enter your TODO content (press Ctrl+D when done, or Ctrl+C to cancel):", file=sys.stderr)
             print("", file=sys.stderr)  # Empty line for better formatting
             
             lines = []
@@ -62,7 +62,7 @@ class TODOCLITool:
             
             content = '\n'.join(lines).strip()
             if not content:
-                print("❌ Empty input", file=sys.stderr)
+                print("Error: Empty input", file=sys.stderr)
                 sys.exit(1)
             
             return content
@@ -70,7 +70,7 @@ class TODOCLITool:
             # Piped input mode
             content = sys.stdin.read().strip()
             if not content:
-                print("❌ Empty input", file=sys.stderr)
+                print("Error: Empty input", file=sys.stderr)
                 sys.exit(1)
             
             return content
@@ -80,7 +80,7 @@ class TODOCLITool:
         try:
             return await self.edge.list_projects()
         except Exception as e:
-            print(f"❌ Error fetching projects: {e}", file=sys.stderr)
+            print(f"Error: Failed to fetch projects: {e}", file=sys.stderr)
             sys.exit(1)
     
     async def get_agents(self) -> List[AgentSettings]:
@@ -88,7 +88,7 @@ class TODOCLITool:
         try:
             return await self.edge.list_agent_settings()
         except Exception as e:
-            print(f"❌ Error fetching agents: {e}", file=sys.stderr)
+            print(f"Error: Failed to fetch agents: {e}", file=sys.stderr)
             sys.exit(1)
     
     def confirm_creation(self, content: str, project_name: str, project_id: str, agent_name: str, todo_id: str, skip_confirm: bool = False) -> str:
@@ -97,7 +97,7 @@ class TODOCLITool:
             return "create"
             
         print("\n" + "="*60, file=sys.stderr)
-        print("📋 TODO Creation Summary", file=sys.stderr)
+        print("TODO Creation Summary", file=sys.stderr)
         print("="*60, file=sys.stderr)
         print(f"Project: {project_name}", file=sys.stderr)
         print(f"Project ID: {project_id}", file=sys.stderr)
@@ -110,7 +110,7 @@ class TODOCLITool:
         print("-" * 40, file=sys.stderr)
         
         try:
-            print("\n💡 Options: Y=create • n=cancel • a=append text • c=change config", file=sys.stderr)
+            print("\nOptions: Y=create | n=cancel | a=append text | c=change config", file=sys.stderr)
             response = _get_single_char_input("Create this TODO? (Y/n/a/c): ")
             if response in ['n', 'N']:
                 return "cancel"
@@ -121,7 +121,7 @@ class TODOCLITool:
             else:
                 return "create"
         except KeyboardInterrupt:
-            print("\n❌ Cancelled", file=sys.stderr)
+            print("\nCancelled", file=sys.stderr)
             return "cancel"
     
     async def create_todo(self, content: str, project_id: str, agent: AgentSettings) -> Dict[str, Any]:
@@ -132,7 +132,7 @@ class TODOCLITool:
                 agent_settings=agent
             )
         except Exception as e:
-            print(f"❌ Error creating TODO: {e}", file=sys.stderr)
+            print(f"Error: Failed to create TODO: {e}", file=sys.stderr)
             sys.exit(1)
 
     async def watch_todo(self, todo_id: str, project_id: str, timeout: int, json_output: bool) -> bool:
@@ -154,7 +154,7 @@ class TODOCLITool:
                 info = {k: v for k, v in payload.items() if k not in skip}
                 parts = [f"{k}={v}" for k, v in info.items()]
                 extra = f" {' '.join(parts)}" if parts else ""
-                print(f"\n\033[32m●\033[0m {block_type}{extra}", file=sys.stderr)
+                print(f"\n\033[32m*\033[0m {block_type}{extra}", file=sys.stderr)
             elif msg_type not in ignore:
                 print(f"[{msg_type}]", file=sys.stderr)
 
@@ -162,7 +162,7 @@ class TODOCLITool:
         watch_task = None
 
         def handle_interrupt():
-            print("\n\033[33m⚡ Interrupting...\033[0m", file=sys.stderr)
+            print("\n\033[33mInterrupting...\033[0m", file=sys.stderr)
             if watch_task:
                 watch_task.cancel()
 
@@ -177,18 +177,18 @@ class TODOCLITool:
             if not result.get("success"):
                 msg_type = result.get("type", "unknown")
                 if msg_type == "todo:msg_error":
-                    print(f"❌ Error: {result.get('payload', {}).get('error', 'unknown')}", file=sys.stderr)
+                    print(f"Error: {result.get('payload', {}).get('error', 'unknown')}", file=sys.stderr)
                 else:
-                    print(f"⚠️  Stopped: {msg_type}", file=sys.stderr)
+                    print(f"Warning: Stopped: {msg_type}", file=sys.stderr)
             return True
         except asyncio.CancelledError:
-            print("\033[33m⚡ Interrupted\033[0m", file=sys.stderr)
+            print("\033[33mInterrupted\033[0m", file=sys.stderr)
             return False
         except TodoStreamError as e:
-            print(f"❌ Stream error: {e}", file=sys.stderr)
+            print(f"Error: Stream error: {e}", file=sys.stderr)
             sys.exit(1)
         except asyncio.TimeoutError:
-            print(f"\n⏱️  Timeout after {timeout}s", file=sys.stderr)
+            print(f"\nTimeout after {timeout}s", file=sys.stderr)
             sys.exit(1)
         finally:
             signal.signal(signal.SIGINT, old_handler)
@@ -262,7 +262,7 @@ class TODOCLITool:
         ]
         
         while True:
-            print("\n🔧 Configure Default Settings", file=sys.stderr)
+            print("\nConfigure Default Settings", file=sys.stderr)
             print("="*40, file=sys.stderr)
             print("Which default config values would you like to change?", file=sys.stderr)
             print("", file=sys.stderr)
@@ -307,12 +307,12 @@ class TODOCLITool:
             except ValueError:
                 print("Please enter a valid number", file=sys.stderr)
             except (KeyboardInterrupt, EOFError):
-                print("\n❌ Cancelled", file=sys.stderr)
+                print("\nCancelled", file=sys.stderr)
                 return
     
     async def _configure_option(self, option: Dict[str, str]):
         """Configure a specific option"""
-        print(f"\n📝 Configuring: {option['name']}", file=sys.stderr)
+        print(f"\nConfiguring: {option['name']}", file=sys.stderr)
         
         if option["type"] == "project":
             await self._configure_project()
@@ -327,7 +327,7 @@ class TODOCLITool:
         """Configure default project"""
         try:
             if not self.edge:
-                print("❌ Need valid API key to list projects", file=sys.stderr)
+                print("Error: Need valid API key to list projects", file=sys.stderr)
                 return
                 
             projects = await self.get_projects()
@@ -349,7 +349,7 @@ class TODOCLITool:
                     project_id = _get_terminal_input("Enter project ID: ").strip()
                     if project_id:
                         self.config.set_default_project(project_id)
-                        print(f"✅ Default project set to: {project_id}", file=sys.stderr)
+                        print(f"Default project set to: {project_id}", file=sys.stderr)
                     break
                 elif choice:
                     try:
@@ -359,7 +359,7 @@ class TODOCLITool:
                             project_id = _get_item_id(project)
                             project_name = _get_display_name(project)
                             self.config.set_default_project(project_id, project_name)
-                            print(f"✅ Default project set to: {project_name}", file=sys.stderr)
+                            print(f"Default project set to: {project_name}", file=sys.stderr)
                             break
                         else:
                             print(f"Please enter a number between 0 and {len(projects)}", file=sys.stderr)
@@ -367,13 +367,13 @@ class TODOCLITool:
                         print("Please enter a valid number", file=sys.stderr)
                         
         except Exception as e:
-            print(f"❌ Error configuring project: {e}", file=sys.stderr)
+            print(f"Error: Failed to configure project: {e}", file=sys.stderr)
     
     async def _configure_agent(self):
         """Configure default agent"""
         try:
             if not self.edge:
-                print("❌ Need valid API key to list agents", file=sys.stderr)
+                print("Error: Need valid API key to list agents", file=sys.stderr)
                 return
                 
             agents = await self.get_agents()
@@ -392,7 +392,7 @@ class TODOCLITool:
                     agent_name = _get_terminal_input("Enter agent name: ").strip()
                     if agent_name:
                         self.config.set_default_agent(agent_name)
-                        print(f"✅ Default agent set to: {agent_name}", file=sys.stderr)
+                        print(f"Default agent set to: {agent_name}", file=sys.stderr)
                     break
                 elif choice:
                     try:
@@ -401,7 +401,7 @@ class TODOCLITool:
                             agent = agents[idx]
                             agent_name = _get_display_name(agent)
                             self.config.set_default_agent(agent_name, agent)
-                            print(f"✅ Default agent set to: {agent_name}", file=sys.stderr)
+                            print(f"Default agent set to: {agent_name}", file=sys.stderr)
                             break
                         else:
                             print(f"Please enter a number between 0 and {len(agents)}", file=sys.stderr)
@@ -409,7 +409,7 @@ class TODOCLITool:
                         print("Please enter a valid number", file=sys.stderr)
                         
         except Exception as e:
-            print(f"❌ Error configuring agent: {e}", file=sys.stderr)
+            print(f"Error: Failed to configure agent: {e}", file=sys.stderr)
     
     def _configure_text_option(self, option: Dict[str, str]):
         """Configure a text option"""
@@ -420,7 +420,7 @@ class TODOCLITool:
         value = _get_terminal_input(f"Enter {option['name'].lower()}: ").strip()
         if value:
             getattr(self.config, f"set_{option['key']}")(value)
-            print(f"✅ {option['name']} set to: {value}", file=sys.stderr)
+            print(f"{option['name']} set to: {value}", file=sys.stderr)
     
     def _configure_password_option(self, option: Dict[str, str]):
         """Configure a password option"""
@@ -434,9 +434,9 @@ class TODOCLITool:
             value = getpass.getpass(f"Enter {option['name'].lower()}: ")
             if value:
                 getattr(self.config, f"set_{option['key']}")(value)
-                print(f"✅ {option['name']} set", file=sys.stderr)
+                print(f"{option['name']} set", file=sys.stderr)
         except KeyboardInterrupt:
-            print("\n❌ Cancelled", file=sys.stderr)
+            print("\nCancelled", file=sys.stderr)
     
     async def run(self, args):
         """Main execution"""
@@ -476,7 +476,7 @@ class TODOCLITool:
                 if projects:
                     project = findBy(projects, lambda p: _get_item_id(p) == args.project)
                     if not project:
-                        print(f"❌ Project ID '{args.project}' not found", file=sys.stderr)
+                        print(f"Error: Project ID '{args.project}' not found", file=sys.stderr)
                         sys.exit(1)
                     project_id, project_name = _get_item_id(project), _get_display_name(project)
                 else:
@@ -497,7 +497,7 @@ class TODOCLITool:
                 # --agent flag requires fetching list to get full settings with id
                 agent = findBy(agents, lambda a: args.agent.lower() in _get_display_name(a).lower())
                 if not agent:
-                    print(f"❌ Agent '{args.agent}' not found", file=sys.stderr)
+                    print(f"Error: Agent '{args.agent}' not found", file=sys.stderr)
                     print("Available agents:", file=sys.stderr)
                     for a in agents:
                         print(f"  - {_get_display_name(a)}", file=sys.stderr)
@@ -523,10 +523,10 @@ class TODOCLITool:
                 action = self.confirm_creation(content, project_name, project_id, _get_display_name(agent), todo_id, args.yes)
                 
                 if action == "cancel":
-                    print("❌ Cancelled", file=sys.stderr)
+                    print("Cancelled", file=sys.stderr)
                     sys.exit(1)
                 elif action == "config":
-                    print("\n🔧 Quick Settings Change", file=sys.stderr)
+                    print("\nQuick Settings Change", file=sys.stderr)
                     await self.interactive_set_defaults()
                     # Clear CLI args so we re-select with new defaults
                     args.project = None
@@ -536,7 +536,7 @@ class TODOCLITool:
                     extra = _get_terminal_input("Enter text to append (empty to skip): ").strip()
                     if extra:
                         content = (content + ("\n" if content and not content.endswith("\n") else "") + extra)
-                        print("➕ Appended.", file=sys.stderr)
+                        print("Appended.", file=sys.stderr)
                     else:
                         print("No changes.", file=sys.stderr)
                     continue  # re-show confirmation with updated content
@@ -550,7 +550,7 @@ class TODOCLITool:
                 continue
 
         # Create TODO
-        print(f"\n🚀 Creating TODO...", file=sys.stderr)
+        print(f"\nCreating TODO...", file=sys.stderr)
         todo = await self.create_todo(content, project_id, agent)
         
         # Get the actual todo ID from response
@@ -563,7 +563,7 @@ class TODOCLITool:
             todo_with_url['frontend_url'] = frontend_url
             print(json.dumps(todo_with_url, indent=2))
         else:
-            print(f"✅ TODO created: {frontend_url}", file=sys.stderr)
+            print(f"TODO created: {frontend_url}", file=sys.stderr)
 
         # Watch for completion (default behavior)
         if not args.no_watch:
@@ -659,9 +659,9 @@ Examples:
     if args.reset_config:
         if cfg.config_path.exists():
             cfg.config_path.unlink()
-            print(f"✅ Configuration reset: {cfg.config_path}")
+            print(f"Configuration reset: {cfg.config_path}")
         else:
-            print("✅ No configuration file to reset")
+            print("No configuration file to reset")
         return
     
     if args.set_defaults:
@@ -672,16 +672,16 @@ Examples:
     if args.set_default_project or args.set_default_agent or args.set_default_api_url or args.set_default_api_key:
         if args.set_default_project:
             cfg.set_default_project(args.set_default_project)
-            print(f"✅ Default project set to: {args.set_default_project}")
+            print(f"Default project set to: {args.set_default_project}")
         if args.set_default_agent:
             cfg.set_default_agent(args.set_default_agent)
-            print(f"✅ Default agent set to: {args.set_default_agent}")
+            print(f"Default agent set to: {args.set_default_agent}")
         if args.set_default_api_url:
             cfg.set_default_api_url(args.set_default_api_url)
-            print(f"✅ Default API URL set to: {args.set_default_api_url}")
+            print(f"Default API URL set to: {args.set_default_api_url}")
         if args.set_default_api_key:
             cfg.set_default_api_key(args.set_default_api_key)
-            print(f"✅ Default API key set")
+            print(f"Default API key set")
         return
 
     # Terminal-Bench mode - special execution path (sync, doesn't need asyncio)

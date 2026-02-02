@@ -31,7 +31,7 @@ async def init_edge(cli_api_url: Optional[str], saved_default_api_url: Optional[
         cfg.api_key = saved_default_api_key
 
     if not cfg.api_key:
-        print("❌ Please set TODOFORAI_API_KEY (or TODO4AI_API_KEY) environment variable", file=sys.stderr)
+        print("Error: Please set TODOFORAI_API_KEY (or TODO4AI_API_KEY) environment variable", file=sys.stderr)
         print("   Or use: todoai-cli --set-default-api-key YOUR_API_KEY", file=sys.stderr)
         sys.exit(1)
 
@@ -41,7 +41,7 @@ async def init_edge(cli_api_url: Optional[str], saved_default_api_url: Optional[
         result = await edge.validate_api_key()
         if not result.get("valid"):
             err = result.get("error", "Unknown error")
-            print(f"❌ API key validation failed: {err}", file=sys.stderr)
+            print(f"Error: API key validation failed: {err}", file=sys.stderr)
             sys.exit(1)
 
     return edge
