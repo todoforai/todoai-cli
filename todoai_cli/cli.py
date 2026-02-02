@@ -21,7 +21,6 @@ from .edge_client import init_edge
 from .project_selectors import select_project, select_agent, _get_display_name, _get_item_id, _get_terminal_input, _get_single_char_input
 from .prompt_input import create_session, get_interactive_input
 from .message_display import MessageDisplay
-from .terminal_bench import run_terminal_bench_mode
 
 def _exit_on_sigint(signum, frame):
     """Handle SIGINT (Ctrl+C) by exiting with a message and code 130."""
@@ -629,12 +628,6 @@ Examples:
     parser.add_argument('--debug', action='store_true', help='Enable debug output')
     parser.add_argument('--config-path', metavar='PATH', help='Custom config file path')
 
-    # Terminal-Bench mode
-    tbench_group = parser.add_argument_group('terminal-bench')
-    tbench_group.add_argument('--terminal-bench', action='store_true',
-                              help='Terminal-Bench mode: direct LLM execution with tmux bridging')
-    tbench_group.add_argument('--model', '-m', help='Model to use (for --terminal-bench mode)')
-    
     # Config management
     config_group = parser.add_argument_group('configuration')
     config_group.add_argument('--set-defaults', action='store_true', help='Interactive configuration of default settings')
@@ -683,10 +676,6 @@ Examples:
             cfg.set_default_api_key(args.set_default_api_key)
             print(f"Default API key set")
         return
-
-    # Terminal-Bench mode - special execution path (sync, doesn't need asyncio)
-    if args.terminal_bench:
-        sys.exit(run_terminal_bench_mode(args))
 
     # Main async execution
     asyncio.run(_async_main(cfg, args))
