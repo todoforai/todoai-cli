@@ -7,6 +7,7 @@ Usage: echo "todo content" | todoai [options]
 import argparse
 import asyncio
 import json
+import os
 import sys
 import uuid
 import signal
@@ -26,6 +27,26 @@ def _exit_on_sigint(signum, frame):
     """Handle SIGINT (Ctrl+C) by exiting with a message and code 130."""
     print("\nCancelled by user (Ctrl+C)", file=sys.stderr)
     sys.exit(130)
+
+
+def _get_agent_workspace_paths(agent: dict) -> list:
+    """Extract all workspace paths from an agent's edge configs."""
+    paths = []
+    for edge_config in agent.get("edgesMcpConfigs", {}).values():
+        todoai_config = edge_config.get("todoai_edge") or edge_config.get("todoai", {})
+        paths.extend(todoai_config.get("workspacePaths", []))
+    return paths
+
+
+def _find_agent_by_path(agents: list, path: str):
+    """Find agent whose workspacePaths contain the given path. Returns (agent, matched_workspace) or (None, None)."""
+    resolved = os.path.realpath(path)
+    for agent in agents:
+        for wp in _get_agent_workspace_paths(agent):
+            wp_resolved = os.path.realpath(wp)
+            if resolved == wp_resolved or resolved.startswith(wp_resolved + os.sep):
+                return agent, wp_resolved
+    return None, None
 
 
 class TODOCLITool:
@@ -134,19 +155,24 @@ class TODOCLITool:
             print(f"Error: Failed to create TODO: {e}", file=sys.stderr)
             sys.exit(1)
 
-    async def watch_todo(self, todo_id: str, project_id: str, timeout: int, json_output: bool) -> bool:
+    async def watch_todo(self, todo_id: str, project_id: str, timeout: int, json_output: bool, agent_settings: dict = None) -> bool:
         """Watch todo execution. Returns True if completed normally, False if interrupted."""
         ignore = {
             "todo:msg_start", "todo:msg_done", "todo:msg_error", "todo:msg_stop_sequence",
             "todo:msg_meta_ai", "todo:status", "block:end",
             "block:start_text", "block:start_shell", "block:start_createfile",
-            "block:start_modifyfile", "block:start_mcp",
+            "block:start_modifyfile", "block:start_mcp", "block:start_catfile",
         }
 
         def on_message(msg_type: str, payload: Dict[str, Any]):
             if msg_type == "block:message":
                 sys.stdout.write(payload.get("content", ""))
                 sys.stdout.flush()
+            elif msg_type == "BLOCK_UPDATE":
+                updates = payload.get("updates", {})
+                result = updates.get("result")
+                if result:
+                    print(f"\n--- Block Result ---\n{result}", file=sys.stderr)
             elif msg_type == "block:start_universal":
                 skip = {"userId", "messageId", "todoId", "blockId", "block_type"}
                 block_type = payload.get("block_type", "UNIVERSAL")
@@ -157,11 +183,100 @@ class TODOCLITool:
             elif msg_type not in ignore:
                 print(f"[{msg_type}]", file=sys.stderr)
 
-        # Set up interrupt handling
+        # Get edge config for approvals
+        edge_id = None
+        root_path = ""
+        if agent_settings:
+            edges_mcp_configs = agent_settings.get("edgesMcpConfigs", {})
+            edge_id = next(iter(edges_mcp_configs.keys()), None)
+            if edge_id:
+                edge_config = edges_mcp_configs.get(edge_id, {})
+                todoai_config = edge_config.get("todoai_edge") or edge_config.get("todoai", {})
+                workspace_paths = todoai_config.get("workspacePaths", [])
+                root_path = workspace_paths[0] if workspace_paths else ""
+
+        # Track approve-all state
+        approve_all = False
+
+        async def handle_approval(ws, block_info):
+            nonlocal approve_all
+            block_id = block_info.get("blockId")
+            message_id = block_info.get("messageId")
+            block_payload = block_info.get("payload", {})
+            block_type = block_info.get("type", "block:start_shell")
+
+            # Determine block type label
+            type_label = "Shell"
+            if "catfile" in block_type:
+                type_label = "Read File"
+            elif "createfile" in block_type:
+                type_label = "Create File"
+            elif "modifyfile" in block_type:
+                type_label = "Modify File"
+            elif "mcp" in block_type:
+                type_label = "MCP"
+
+            # Get content to display - try various payload fields
+            content = (
+                block_payload.get("content") or
+                block_payload.get("path") or
+                block_payload.get("filePath") or
+                block_payload.get("file_path") or
+                block_payload.get("filename") or
+                block_payload.get("name") or
+                block_payload.get("command") or
+                ""
+            )
+            # If still empty, show keys for debugging
+            if not content:
+                skip_keys = {"userId", "messageId", "todoId", "blockId", "block_type"}
+                useful = {k: v for k, v in block_payload.items() if k not in skip_keys and v}
+                content = str(useful) if useful else "<pending>"
+
+            # Truncate long content
+            if len(content) > 200:
+                content = content[:200] + "..."
+
+            # Auto-approve if user chose 'a'
+            if approve_all:
+                print(f"\n\033[33m⚠ Auto-approving [{type_label}]\033[0m {content}", file=sys.stderr)
+                if edge_id:
+                    await ws.send_block_execute(todo_id, message_id, block_id, edge_id, block_payload.get("content", ""), root_path)
+                return
+
+            # Prompt user
+            print(f"\n\033[33m⚠ Action awaiting approval:\033[0m", file=sys.stderr)
+            print(f"  [{type_label}] {content}", file=sys.stderr)
+
+            try:
+                response = _get_single_char_input("  [Y]es / [n]o / [a]ll? ")
+            except (KeyboardInterrupt, EOFError):
+                response = "n"
+
+            if response.lower() == "a":
+                approve_all = True
+                response = "y"
+
+            if response.lower() in ("y", ""):
+                if edge_id:
+                    await ws.send_block_execute(todo_id, message_id, block_id, edge_id, block_payload.get("content", ""), root_path)
+                else:
+                    print("  \033[31m✗ No edge configured for approval\033[0m", file=sys.stderr)
+            else:
+                await ws.send_block_deny(todo_id, message_id, block_id)
+                print("  \033[31m✗ Denied\033[0m", file=sys.stderr)
+
+        # Set up interrupt handling with double Ctrl+C to force exit
         watch_task = None
+        interrupt_count = 0
 
         def handle_interrupt():
-            print("\n\033[33mInterrupting...\033[0m", file=sys.stderr)
+            nonlocal interrupt_count
+            interrupt_count += 1
+            if interrupt_count >= 2:
+                print("\n\033[31mForce exit (double Ctrl+C)\033[0m", file=sys.stderr)
+                sys.exit(130)
+            print("\n\033[33mInterrupting... (Ctrl+C again to force exit)\033[0m", file=sys.stderr)
             if watch_task:
                 watch_task.cancel()
 
@@ -169,7 +284,10 @@ class TODOCLITool:
 
         try:
             watch_task = asyncio.create_task(
-                self.edge.wait_for_todo_completion(todo_id, timeout, on_message)
+                self.edge.wait_for_todo_completion(
+                    todo_id, timeout, on_message, project_id,
+                    approval_handler=handle_approval if edge_id else None
+                )
             )
             result = await watch_task
             print()  # newline after streaming
@@ -230,7 +348,7 @@ class TODOCLITool:
                     todo_id=todo_id,
                     allow_queue=True
                 )
-                await self.watch_todo(todo_id, project_id, timeout, json_output)
+                await self.watch_todo(todo_id, project_id, timeout, json_output, agent)
             except (KeyboardInterrupt, EOFError):
                 break
 
@@ -451,6 +569,9 @@ class TODOCLITool:
         # If --agent flag provided, we must fetch to get full settings
         stored_agent = self.config.data.get("default_agent_settings")
         has_agent = (stored_agent and stored_agent.get("id")) and not args.agent
+        # If path provided, we need agents list to match workspace paths
+        if args.path:
+            has_agent = False
 
         # Only fetch lists if needed for selection (or --safe mode)
         projects = None
@@ -492,7 +613,19 @@ class TODOCLITool:
                 )
 
             # Select agent
-            if args.agent:
+            if args.path and agents:
+                # Match agent by workspace path
+                agent, matched_wp = _find_agent_by_path(agents, args.path)
+                if not agent:
+                    print(f"Error: No agent found with workspacePath matching '{os.path.realpath(args.path)}'", file=sys.stderr)
+                    print("Available agents and their workspace paths:", file=sys.stderr)
+                    for a in agents:
+                        paths = _get_agent_workspace_paths(a)
+                        print(f"  - {_get_display_name(a)}: {paths or '(none)'}", file=sys.stderr)
+                    sys.exit(1)
+                print(f"Auto-selected agent by path: {_get_display_name(agent)} (workspace: {matched_wp})", file=sys.stderr)
+                self.config.set_default_agent(_get_display_name(agent), agent)
+            elif args.agent:
                 # --agent flag requires fetching list to get full settings with id
                 agent = findBy(agents, lambda a: args.agent.lower() in _get_display_name(a).lower())
                 if not agent:
@@ -566,7 +699,7 @@ class TODOCLITool:
 
         # Watch for completion (default behavior)
         if not args.no_watch:
-            await self.watch_todo(actual_todo_id, project_id, args.timeout, args.json)
+            await self.watch_todo(actual_todo_id, project_id, args.timeout, args.json, agent)
 
         # Interactive mode - continue conversation
         if args.interactive and not args.no_watch:
@@ -595,7 +728,7 @@ class TODOCLITool:
                         todo_id=actual_todo_id,
                         allow_queue=True
                     )
-                    await self.watch_todo(actual_todo_id, project_id, args.timeout, args.json)
+                    await self.watch_todo(actual_todo_id, project_id, args.timeout, args.json, agent)
                 except (KeyboardInterrupt, EOFError):
                     break
 
@@ -614,6 +747,7 @@ Examples:
     # Ensure first Ctrl+C exits immediately with a message (exit code 130 = SIGINT)
     signal.signal(signal.SIGINT, _exit_on_sigint)
 
+    parser.add_argument('path', nargs='?', default=None, help='Workspace path (auto-selects agent by matching workspacePaths)')
     parser.add_argument('--project', '-p', help='Project ID (will prompt if not provided)')
     parser.add_argument('--agent', '-a', help='Agent name (partial match, will prompt if not provided)')
     parser.add_argument('--todo-id', help='Custom TODO ID (auto-generated if not provided)')
