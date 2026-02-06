@@ -38,20 +38,28 @@ def _get_single_char() -> str:
     try:
         import termios
         import tty
+        import select
 
         with open("/dev/tty", "rb+", buffering=0) as tty_dev:
             fd = tty_dev.fileno()
             old_settings = termios.tcgetattr(fd)
             try:
                 tty.setcbreak(fd)
-                ch = tty_dev.read(1)
+                # Flush any pending input in the buffer
+                termios.tcflush(fd, termios.TCIFLUSH)
+                # Read until we get a non-whitespace char (skip stray newlines)
+                while True:
+                    ch = tty_dev.read(1)
+                    decoded = ch.decode("utf-8", errors="ignore")
+                    if decoded and decoded.strip():
+                        return decoded[0]
+                    # If whitespace, continue reading
             finally:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        return (ch.decode("utf-8", errors="ignore") or " ")[0]
-    except (OSError, FileNotFoundError, ImportError):
+    except (OSError, FileNotFoundError, ImportError) as e:
         # /dev/tty not available or termios missing -> try platform-specific or fallback
         pass
-    except Exception:
+    except Exception as e:
         # Any unexpected terminal error -> fall through to fallbacks
         pass
 
