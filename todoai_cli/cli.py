@@ -67,24 +67,17 @@ class TODOCLITool:
     def read_stdin(self) -> str:
         """Read content from stdin or prompt for interactive input"""
         if sys.stdin.isatty():
-            # Interactive mode - prompt user for input
-            print("Enter your TODO content (press Ctrl+D when done, or Ctrl+C to cancel):", file=sys.stderr)
-            print("", file=sys.stderr)  # Empty line for better formatting
-            
-            lines = []
+            # Interactive mode - single line, Enter sends
             try:
-                while True:
-                    line = input()
-                    lines.append(line)
-            except EOFError:
-                # User pressed Ctrl+D
-                pass
-            
-            content = '\n'.join(lines).strip()
+                content = _get_terminal_input("TODO> ").strip()
+            except (KeyboardInterrupt, EOFError):
+                print("\nCancelled", file=sys.stderr)
+                sys.exit(1)
+
             if not content:
                 print("Error: Empty input", file=sys.stderr)
                 sys.exit(1)
-            
+
             return content
         else:
             # Piped input mode
