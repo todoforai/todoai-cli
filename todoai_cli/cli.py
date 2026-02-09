@@ -16,6 +16,8 @@ from typing import Optional, List, Dict, Any
 from todoforai_edge.utils import findBy
 from todoforai_edge.types import ProjectListItem, AgentSettings
 from todoforai_edge.frontend_ws import TodoStreamError
+from todoforai_edge.edge import TODOforAIEdge
+from todoforai_edge.config import Config as EdgeConfig
 
 from .config_store import TODOCLIConfig
 from .edge_client import init_edge
@@ -54,7 +56,9 @@ class TODOCLITool:
         self.config = config
         self.edge = None
         self.message_display = message_display or MessageDisplay()
-    
+        self._embedded_edge: Optional[TODOforAIEdge] = None
+        self._embedded_edge_task: Optional[asyncio.Task] = None
+
     async def init_edge(self, api_url: Optional[str] = None, skip_validation: bool = False):
         """Initialize TODOforAI Edge client"""
         self.edge = await init_edge(
@@ -63,6 +67,42 @@ class TODOCLITool:
             self.config.data.get("default_api_key"),
             skip_validation=skip_validation
         )
+
+    async def start_embedded_edge(self, workspace_path: str = "/tmp/todoforai"):
+        """Start an embedded edge runtime for local block execution."""
+        cfg = EdgeConfig()
+        cfg.api_url = self.edge.api_url
+        cfg.api_key = self.edge.api_key
+
+        self._embedded_edge = TODOforAIEdge(cfg)
+        await self._embedded_edge.ensure_api_key(prompt_if_missing=False)
+
+        # Add workspace path so the edge knows where to execute
+        if workspace_path:
+            self._embedded_edge.add_workspace_path = os.path.abspath(workspace_path)
+
+        # Start the edge in the background (it runs a reconnect loop)
+        self._embedded_edge_task = asyncio.create_task(self._embedded_edge.start())
+
+        # Wait for the edge to connect and get its edge_id
+        for _ in range(50):  # up to 5 seconds
+            if self._embedded_edge.edge_id:
+                print(f"Embedded edge running (id: {self._embedded_edge.edge_id})", file=sys.stderr)
+                return
+            await asyncio.sleep(0.1)
+
+        print("Warning: Embedded edge did not get an edge_id in time", file=sys.stderr)
+
+    async def stop_embedded_edge(self):
+        """Stop the embedded edge runtime."""
+        if self._embedded_edge_task:
+            self._embedded_edge_task.cancel()
+            try:
+                await self._embedded_edge_task
+            except asyncio.CancelledError:
+                pass
+            self._embedded_edge_task = None
+        self._embedded_edge = None
     
     def read_stdin(self) -> str:
         """Read content from stdin or prompt for interactive input"""
@@ -179,7 +219,13 @@ class TODOCLITool:
         # Get edge config for approvals
         edge_id = None
         root_path = ""
-        if agent_settings:
+        # Prefer embedded edge if running (--edge mode)
+        if self._embedded_edge and self._embedded_edge.edge_id:
+            edge_id = self._embedded_edge.edge_id
+            # Use the embedded edge's workspace path
+            wp = self._embedded_edge.edge_config.config.get("workspacepaths", [])
+            root_path = wp[0] if wp else ""
+        elif agent_settings:
             edges_mcp_configs = agent_settings.get("edgesMcpConfigs", {})
             edge_id = next(iter(edges_mcp_configs.keys()), None)
             if edge_id:
@@ -553,6 +599,10 @@ class TODOCLITool:
         # Init edge with URL priority: --api-url > env (inside Edge Config) > config default > package default
         await self.init_edge(args.api_url, skip_validation=not args.safe)
 
+        # Start embedded edge if --edge flag is set
+        if args.edge is not None:
+            await self.start_embedded_edge(workspace_path=os.path.abspath(args.edge))
+
         # Read content from stdin
         content = self.read_stdin()
 
@@ -725,6 +775,9 @@ class TODOCLITool:
                 except (KeyboardInterrupt, EOFError):
                     break
 
+        # Clean up embedded edge if running
+        await self.stop_embedded_edge()
+
 def main():
     parser = argparse.ArgumentParser(
         description="Create TODOs and stream results",
@@ -735,6 +788,8 @@ Examples:
   echo "Quick task" | todoai -y             # Skip confirmation
   echo "Fire and forget" | todoai --no-watch
   echo "Long task" | todoai --timeout 600   # 10 min timeout
+  echo "Run locally" | todoai --edge        # Execute blocks in this process
+  echo "Run in dir" | todoai --edge /app    # Execute blocks in /app
         """
     )
     # Ensure first Ctrl+C exits immediately with a message (exit code 130 = SIGINT)
@@ -753,6 +808,8 @@ Examples:
     parser.add_argument('--timeout', type=int, default=300, help='Watch timeout in seconds (default: 300)')
     parser.add_argument('--safe', action='store_true', help='Validate API key and fetch lists upfront')
     parser.add_argument('--debug', action='store_true', help='Enable debug output')
+    parser.add_argument('--edge', nargs='?', const='.', default=None, metavar='WORKSPACE',
+                        help='Start embedded edge for local block execution (optionally specify workspace path, default: cwd)')
     parser.add_argument('--config-path', metavar='PATH', help='Custom config file path')
 
     # Config management
@@ -814,8 +871,16 @@ async def _async_main(cfg: TODOCLIConfig, args: argparse.Namespace) -> None:
 
     if args.resume:
         await tool.init_edge(args.api_url, skip_validation=not args.safe)
-        await tool.resume_todo(args.resume, args.timeout, args.json)
+        if args.edge is not None:
+            await tool.start_embedded_edge(workspace_path=os.path.abspath(args.edge))
+        try:
+            await tool.resume_todo(args.resume, args.timeout, args.json)
+        finally:
+            await tool.stop_embedded_edge()
     else:
+        if args.edge is not None:
+            # Edge mode implies --yes (no interactive approval possible in headless)
+            args.yes = True
         await tool.run(args)
 
 if __name__ == "__main__":

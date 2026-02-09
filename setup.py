@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="todoai-cli",
-    version="0.1.5",
+    version="0.1.6",
     author="TODOforAI",
     author_email="support@todoforai.com",
     description="Command-line interface for TODOforAI Edge",
@@ -24,7 +24,7 @@ setup(
     ],
     python_requires=">=3.10",
     install_requires=[
-        "todoforai-edge-cli>=0.1.0",
+        "todoforai-edge-cli>=0.12.3",
         "prompt_toolkit>=3.0.0",
     ],
     entry_points={
