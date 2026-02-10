@@ -634,6 +634,57 @@ class TODOCLITool:
         except KeyboardInterrupt:
             print("\nCancelled", file=sys.stderr)
     
+    async def _auto_create_agent(self, resolved_path: str, agents: list) -> dict:
+        """Create a new agent with workspace path configured. Returns agent dict."""
+        folder_name = os.path.basename(resolved_path) or "default"
+
+        # 1. Create agent
+        resp = (await async_request(self.edge, 'post', '/api/v1/agents', {})).json()
+        agent_id = resp.get("id") or resp.get("agentSettingsId")
+        if not agent_id:
+            raise RuntimeError(f"Failed to create agent: {resp}")
+        agent_settings_id = resp.get("agentSettingsId", agent_id)
+
+        # 2. Set name
+        await async_request(self.edge, 'put', f'/api/v1/agents/{agent_id}/settings', {
+            "agentSettingsId": agent_settings_id,
+            "updates": {"name": folder_name}
+        })
+
+        # 3. Find edge ID: reuse from existing agents, or fetch /edges
+        edge_id = None
+        for a in agents:
+            keys = list(a.get("edgesMcpConfigs", {}).keys())
+            if keys:
+                edge_id = keys[0]
+                break
+        if not edge_id:
+            edges = (await async_request(self.edge, 'get', '/api/v1/edges', None)).json()
+            if edges and isinstance(edges, list):
+                edge_id = edges[0].get("id")
+        if not edge_id:
+            raise RuntimeError("No edge available to configure workspace path")
+
+        # 4. Set workspace path
+        await async_request(self.edge, 'put', f'/api/v1/agents/{agent_id}/edge-mcp-config', {
+            "agentSettingsId": agent_settings_id,
+            "edgeId": edge_id,
+            "mcpName": "todoai_edge",
+            "config": {"workspacePaths": [resolved_path], "isActive": True}
+        })
+
+        # 5. Re-fetch full agent from server (has ownerId etc.)
+        all_agents = await self.get_agents()
+        for a in all_agents:
+            if _get_item_id(a) == agent_id:
+                return a
+        # Fallback: return create response merged with essentials
+        resp["name"] = folder_name
+        resp["edgesMcpConfigs"] = {
+            edge_id: {"todoai_edge": {"workspacePaths": [resolved_path], "isActive": True}}
+        }
+        return resp
+
     async def run(self, args):
         """Main execution"""
         # Init edge with URL priority: --api-url > env (inside Edge Config) > config default > package default
@@ -643,6 +694,26 @@ class TODOCLITool:
         if args.edge is not None:
             await self.start_embedded_edge(workspace_path=os.path.abspath(args.edge))
 
+        # Pre-resolve agent by workspace path BEFORE prompting for input
+        pre_matched_agent = None
+        if args.path:
+            agents = await self.get_agents()
+            agent, matched_wp = _find_agent_by_path(agents, args.path)
+            if agent:
+                print(f"Auto-selected agent by path: {_get_display_name(agent)} (workspace: {matched_wp})", file=sys.stderr)
+                self.config.set_default_agent(_get_display_name(agent), agent)
+                pre_matched_agent = agent
+            else:
+                resolved = os.path.realpath(args.path)
+                print(f"No agent found for '{resolved}', creating one...", file=sys.stderr)
+                try:
+                    pre_matched_agent = await self._auto_create_agent(resolved, agents)
+                    print(f"Created agent '{pre_matched_agent['name']}' with workspace: {resolved}", file=sys.stderr)
+                    self.config.set_default_agent(pre_matched_agent['name'], pre_matched_agent)
+                except Exception as e:
+                    print(f"Error: Failed to auto-create agent: {e}", file=sys.stderr)
+                    sys.exit(1)
+
         # Read content from stdin
         content = self.read_stdin()
 
@@ -651,17 +722,15 @@ class TODOCLITool:
         # For agent, we need full settings with id - name alone isn't enough
         # If --agent flag provided, we must fetch to get full settings
         stored_agent = self.config.data.get("default_agent_settings")
-        has_agent = (stored_agent and stored_agent.get("id")) and not args.agent
-        # If path provided, we need agents list to match workspace paths
-        if args.path:
-            has_agent = False
+        has_agent = pre_matched_agent or ((stored_agent and stored_agent.get("id")) and not args.agent)
 
         # Only fetch lists if needed for selection (or --safe mode)
         projects = None
-        agents = None
+        agents = agents if args.path else None
         if not has_project or not has_agent or args.safe or args.debug:
             projects = await self.get_projects()
-            agents = await self.get_agents()
+            if not agents:
+                agents = await self.get_agents()
 
         # Remove DEBUG prints for cleaner output
         if args.debug and projects and agents:
@@ -696,18 +765,8 @@ class TODOCLITool:
                 )
 
             # Select agent
-            if args.path and agents:
-                # Match agent by workspace path
-                agent, matched_wp = _find_agent_by_path(agents, args.path)
-                if not agent:
-                    print(f"Error: No agent found with workspacePath matching '{os.path.realpath(args.path)}'", file=sys.stderr)
-                    print("Available agents and their workspace paths:", file=sys.stderr)
-                    for a in agents:
-                        paths = _get_agent_workspace_paths(a)
-                        print(f"  - {_get_display_name(a)}: {paths or '(none)'}", file=sys.stderr)
-                    sys.exit(1)
-                print(f"Auto-selected agent by path: {_get_display_name(agent)} (workspace: {matched_wp})", file=sys.stderr)
-                self.config.set_default_agent(_get_display_name(agent), agent)
+            if pre_matched_agent:
+                agent = pre_matched_agent
             elif args.agent:
                 # --agent flag requires fetching list to get full settings with id
                 agent = findBy(agents, lambda a: args.agent.lower() in _get_display_name(a).lower())

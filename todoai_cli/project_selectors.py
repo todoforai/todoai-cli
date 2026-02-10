@@ -47,13 +47,12 @@ def _get_single_char() -> str:
                 tty.setcbreak(fd)
                 # Flush any pending input in the buffer
                 termios.tcflush(fd, termios.TCIFLUSH)
-                # Read until we get a non-whitespace char (skip stray newlines)
-                while True:
-                    ch = tty_dev.read(1)
-                    decoded = ch.decode("utf-8", errors="ignore")
-                    if decoded and decoded.strip():
-                        return decoded[0]
-                    # If whitespace, continue reading
+                ch = tty_dev.read(1)
+                decoded = ch.decode("utf-8", errors="ignore")
+                # Return empty string for Enter (newline/carriage return) so caller uses default
+                if decoded in ("\n", "\r", ""):
+                    return ""
+                return decoded[0]
             finally:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
     except (OSError, FileNotFoundError, ImportError) as e:
