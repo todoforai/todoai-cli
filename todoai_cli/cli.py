@@ -920,7 +920,7 @@ Examples:
     # Ensure first Ctrl+C exits immediately with a message (exit code 130 = SIGINT)
     signal.signal(signal.SIGINT, _exit_on_sigint)
 
-    parser.add_argument('path', nargs='?', default=None, help='Workspace path (auto-selects agent by matching workspacePaths)')
+    parser.add_argument('path', nargs='?', default='.', help='Workspace path (auto-selects agent by matching workspacePaths, defaults to cwd)')
     parser.add_argument('--project', '-p', help='Project ID (will prompt if not provided)')
     parser.add_argument('--agent', '-a', help='Agent name (partial match, will prompt if not provided)')
     parser.add_argument('--todo-id', help='Custom TODO ID (auto-generated if not provided)')
