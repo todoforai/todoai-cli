@@ -724,6 +724,21 @@ class TODOCLITool:
             else:
                 continue
 
+        # Inject embedded edge into agent settings so the server-side agent
+        # can discover it and generate blocks for execution.
+        if self._embedded_edge and self._embedded_edge.edge_id:
+            edge_id = self._embedded_edge.edge_id
+            configs = agent.get("edgesMcpConfigs") or {}
+            if edge_id not in configs:
+                wp = os.path.abspath(args.edge) if args.edge else "."
+                configs[edge_id] = {
+                    "todoai_edge": {
+                        "isActive": True,
+                        "workspacePaths": [wp],
+                    }
+                }
+                agent["edgesMcpConfigs"] = configs
+
         # Create TODO
         print(f"\nCreating TODO...", file=sys.stderr)
         todo = await self.create_todo(content, project_id, agent)
