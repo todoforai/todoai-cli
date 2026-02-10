@@ -299,6 +299,8 @@ class TODOCLITool:
             message_id = block_info.get("messageId")
             block_payload = block_info.get("payload", {})
             block_kind = _classify_block(block_info)
+            # Debug: show what the classifier sees
+            print(f"  [DEBUG] block_info keys={list(block_info.keys())} type={block_info.get('type','')} payload.block_type={block_payload.get('block_type','')} → {block_kind}", file=sys.stderr)
 
             # Label for display
             labels = {"file": "File", "read": "Read File", "mcp": "MCP", "shell": "Shell"}
