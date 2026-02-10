@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="todoai-cli",
-    version="0.1.9",
+    version="0.1.10",
     author="TODOforAI",
     author_email="support@todoforai.com",
     description="Command-line interface for TODOforAI Edge",

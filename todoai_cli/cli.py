@@ -237,55 +237,98 @@ class TODOCLITool:
         # Track approve-all state
         approve_all = auto_approve
 
+        def _classify_block(block_info):
+            """Classify block type from block_info."""
+            btype = block_info.get("type", "")
+            bp = block_info.get("payload", {})
+            # Universal blocks have block_type in payload
+            inner = bp.get("block_type", "").lower()
+            if "createfile" in btype or inner in ("create", "createfile"):
+                return "file"
+            if "modifyfile" in btype or inner in ("modify", "modifyfile", "update"):
+                return "file"
+            if "catfile" in btype or inner in ("catfile", "read", "readfile"):
+                return "read"
+            if "mcp" in btype or inner == "mcp":
+                return "mcp"
+            return "shell"
+
+        async def _approve_block(ws, block_id, message_id, block_payload, block_kind):
+            """Send the right approval message based on block kind."""
+            if not edge_id:
+                print("  \033[31m✗ No edge configured for approval\033[0m", file=sys.stderr)
+                return
+            if block_kind == "file":
+                # File creation/modification: send block:save so edge writes the file
+                filepath = (block_payload.get("path") or block_payload.get("filePath")
+                            or block_payload.get("file_path") or block_payload.get("filename") or "")
+                msg = {
+                    "type": "block:save",
+                    "payload": {
+                        "todoId": todo_id,
+                        "messageId": message_id,
+                        "blockId": block_id,
+                        "edgeId": edge_id,
+                        "filepath": filepath,
+                        "content": block_payload.get("content", ""),
+                        "rootPath": root_path,
+                    }
+                }
+                await ws.ws.send(json.dumps(msg))
+            elif block_kind == "mcp":
+                msg = {
+                    "type": "block:mcp_execute",
+                    "payload": {
+                        "todoId": todo_id,
+                        "messageId": message_id,
+                        "blockId": block_id,
+                        "edgeId": edge_id,
+                        **{k: v for k, v in block_payload.items()
+                           if k not in ("userId", "messageId", "todoId", "blockId")},
+                    }
+                }
+                await ws.ws.send(json.dumps(msg))
+            else:
+                # Shell / default
+                await ws.send_block_execute(todo_id, message_id, block_id, edge_id,
+                                            block_payload.get("content", ""), root_path)
+
         async def handle_approval(ws, block_info):
             nonlocal approve_all
             block_id = block_info.get("blockId")
             message_id = block_info.get("messageId")
             block_payload = block_info.get("payload", {})
-            block_type = block_info.get("type", "block:start_shell")
+            block_kind = _classify_block(block_info)
 
-            # Determine block type label
-            type_label = "Shell"
-            if "catfile" in block_type:
-                type_label = "Read File"
-            elif "createfile" in block_type:
-                type_label = "Create File"
-            elif "modifyfile" in block_type:
-                type_label = "Modify File"
-            elif "mcp" in block_type:
-                type_label = "MCP"
+            # Label for display
+            labels = {"file": "File", "read": "Read File", "mcp": "MCP", "shell": "Shell"}
+            type_label = labels.get(block_kind, "Shell")
 
             # Get content to display - try various payload fields
-            content = (
-                block_payload.get("content") or
+            display = (
                 block_payload.get("path") or
                 block_payload.get("filePath") or
-                block_payload.get("file_path") or
-                block_payload.get("filename") or
-                block_payload.get("name") or
+                block_payload.get("content") or
                 block_payload.get("command") or
+                block_payload.get("name") or
                 ""
             )
-            # If still empty, show keys for debugging
-            if not content:
+            if not display:
                 skip_keys = {"userId", "messageId", "todoId", "blockId", "block_type"}
                 useful = {k: v for k, v in block_payload.items() if k not in skip_keys and v}
-                content = str(useful) if useful else "<pending>"
+                display = str(useful) if useful else "<pending>"
+            if len(display) > 200:
+                display = display[:200] + "..."
 
-            # Truncate long content
-            if len(content) > 200:
-                content = content[:200] + "..."
-
-            # Auto-approve if user chose 'a'
+            # Auto-approve if user chose 'a' or --edge mode
             if approve_all:
-                print(f"\n\033[33m⚠ Auto-approving [{type_label}]\033[0m {content}", file=sys.stderr)
-                if edge_id:
-                    await ws.send_block_execute(todo_id, message_id, block_id, edge_id, block_payload.get("content", ""), root_path)
+                print(f"\n\033[33m⚠ Auto-approving [{type_label}]\033[0m {display}", file=sys.stderr)
+                await _approve_block(ws, block_id, message_id, block_payload, block_kind)
                 return
 
             # Prompt user
             print(f"\n\033[33m⚠ Action awaiting approval:\033[0m", file=sys.stderr)
-            print(f"  [{type_label}] {content}", file=sys.stderr)
+            print(f"  [{type_label}] {display}", file=sys.stderr)
 
             try:
                 response = _get_single_char_input("  [Y]es / [n]o / [a]ll? ")
@@ -297,10 +340,7 @@ class TODOCLITool:
                 response = "y"
 
             if response.lower() in ("y", ""):
-                if edge_id:
-                    await ws.send_block_execute(todo_id, message_id, block_id, edge_id, block_payload.get("content", ""), root_path)
-                else:
-                    print("  \033[31m✗ No edge configured for approval\033[0m", file=sys.stderr)
+                await _approve_block(ws, block_id, message_id, block_payload, block_kind)
             else:
                 await ws.send_block_deny(todo_id, message_id, block_id)
                 print("  \033[31m✗ Denied\033[0m", file=sys.stderr)
