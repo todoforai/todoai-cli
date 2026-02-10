@@ -188,7 +188,7 @@ class TODOCLITool:
             print(f"Error: Failed to create TODO: {e}", file=sys.stderr)
             sys.exit(1)
 
-    async def watch_todo(self, todo_id: str, project_id: str, timeout: int, json_output: bool, agent_settings: dict = None) -> bool:
+    async def watch_todo(self, todo_id: str, project_id: str, timeout: int, json_output: bool, agent_settings: dict = None, auto_approve: bool = False) -> bool:
         """Watch todo execution. Returns True if completed normally, False if interrupted."""
         ignore = {
             "todo:msg_start", "todo:msg_done", "todo:msg_error", "todo:msg_stop_sequence",
@@ -235,7 +235,7 @@ class TODOCLITool:
                 root_path = workspace_paths[0] if workspace_paths else ""
 
         # Track approve-all state
-        approve_all = False
+        approve_all = auto_approve
 
         async def handle_approval(ws, block_info):
             nonlocal approve_all
@@ -349,7 +349,7 @@ class TODOCLITool:
         finally:
             signal.signal(signal.SIGINT, old_handler)
     
-    async def resume_todo(self, todo_id: str, timeout: int, json_output: bool):
+    async def resume_todo(self, todo_id: str, timeout: int, json_output: bool, auto_approve: bool = False):
         """Resume an existing todo - show history and enter interactive mode"""
         # Fetch existing todo with messages
         todo = await self.edge.get_todo(todo_id)
@@ -387,7 +387,7 @@ class TODOCLITool:
                     todo_id=todo_id,
                     allow_queue=True
                 )
-                await self.watch_todo(todo_id, project_id, timeout, json_output, agent)
+                await self.watch_todo(todo_id, project_id, timeout, json_output, agent, auto_approve=auto_approve)
             except (KeyboardInterrupt, EOFError):
                 break
 
@@ -742,12 +742,14 @@ class TODOCLITool:
 
         # Watch for completion (default behavior)
         if not args.no_watch:
-            await self.watch_todo(actual_todo_id, project_id, args.timeout, args.json, agent)
+            auto_approve = args.edge is not None
+            await self.watch_todo(actual_todo_id, project_id, args.timeout, args.json, agent, auto_approve=auto_approve)
 
         # Interactive mode - continue conversation
         if args.interactive and not args.no_watch:
             print("\n" + "─" * 40, file=sys.stderr)
             session = create_session()
+            auto_approve = args.edge is not None
             while True:
                 try:
                     follow_up = await get_interactive_input(session)
@@ -771,7 +773,7 @@ class TODOCLITool:
                         todo_id=actual_todo_id,
                         allow_queue=True
                     )
-                    await self.watch_todo(actual_todo_id, project_id, args.timeout, args.json, agent)
+                    await self.watch_todo(actual_todo_id, project_id, args.timeout, args.json, agent, auto_approve=auto_approve)
                 except (KeyboardInterrupt, EOFError):
                     break
 
@@ -874,7 +876,7 @@ async def _async_main(cfg: TODOCLIConfig, args: argparse.Namespace) -> None:
         if args.edge is not None:
             await tool.start_embedded_edge(workspace_path=os.path.abspath(args.edge))
         try:
-            await tool.resume_todo(args.resume, args.timeout, args.json)
+            await tool.resume_todo(args.resume, args.timeout, args.json, auto_approve=args.edge is not None)
         finally:
             await tool.stop_embedded_edge()
     else:
