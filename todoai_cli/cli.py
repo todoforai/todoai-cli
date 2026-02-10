@@ -13,7 +13,7 @@ import uuid
 import signal
 from typing import Optional, List, Dict, Any
 
-from todoforai_edge.utils import findBy
+from todoforai_edge.utils import findBy, async_request
 from todoforai_edge.types import ProjectListItem, AgentSettings
 from todoforai_edge.frontend_ws import TodoStreamError
 from todoforai_edge.edge import TODOforAIEdge
@@ -724,20 +724,29 @@ class TODOCLITool:
             else:
                 continue
 
-        # Inject embedded edge into agent settings so the server-side agent
-        # can discover it and generate blocks for execution.
+        # Register embedded edge with the agent settings on the server so the
+        # server-side agent can discover it and generate blocks for execution.
         if self._embedded_edge and self._embedded_edge.edge_id:
             edge_id = self._embedded_edge.edge_id
+            agent_id = agent.get("id", "")
+            wp = os.path.abspath(args.edge) if args.edge else "."
+            edge_mcp_config = {
+                "isActive": True,
+                "workspacePaths": [wp],
+            }
+            # Update server-side agent settings
+            try:
+                await async_request(self.edge, 'put',
+                    f"/api/v1/agents/{agent_id}/edge-mcp-config",
+                    {"agentSettingsId": agent_id, "edgeId": edge_id,
+                     "mcpName": "todoai_edge", "config": edge_mcp_config})
+                print(f"Registered edge {edge_id} with agent settings", file=sys.stderr)
+            except Exception as e:
+                print(f"Warning: Failed to register edge with agent: {e}", file=sys.stderr)
+            # Also update local dict for watch_todo
             configs = agent.get("edgesMcpConfigs") or {}
-            if edge_id not in configs:
-                wp = os.path.abspath(args.edge) if args.edge else "."
-                configs[edge_id] = {
-                    "todoai_edge": {
-                        "isActive": True,
-                        "workspacePaths": [wp],
-                    }
-                }
-                agent["edgesMcpConfigs"] = configs
+            configs[edge_id] = {"todoai_edge": edge_mcp_config}
+            agent["edgesMcpConfigs"] = configs
 
         # Create TODO
         print(f"\nCreating TODO...", file=sys.stderr)
