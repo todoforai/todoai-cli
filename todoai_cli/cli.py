@@ -144,39 +144,6 @@ class TODOCLITool:
             print(f"Error: Failed to fetch agents: {e}", file=sys.stderr)
             sys.exit(1)
     
-    def confirm_creation(self, content: str, project_name: str, project_id: str, agent_name: str, todo_id: str, skip_confirm: bool = False) -> str:
-        """Show confirmation dialog before creating TODO"""
-        if skip_confirm:
-            return "create"
-            
-        print("\n" + "="*60, file=sys.stderr)
-        print("TODO Creation Summary", file=sys.stderr)
-        print("="*60, file=sys.stderr)
-        print(f"Project: {project_name}", file=sys.stderr)
-        print(f"Project ID: {project_id}", file=sys.stderr)
-        print(f"Agent: {agent_name}", file=sys.stderr)
-        print(f"TODO ID: {todo_id}", file=sys.stderr)
-        print(f"\nContent preview:", file=sys.stderr)
-        print("-" * 40, file=sys.stderr)
-        preview = content[:200] + "..." if len(content) > 200 else content
-        print(preview, file=sys.stderr)
-        print("-" * 40, file=sys.stderr)
-        
-        try:
-            print("\nOptions: Y=create | n=cancel | a=append text | c=change config", file=sys.stderr)
-            response = _get_single_char_input("Create this TODO? (Y/n/a/c): ")
-            if response in ['n', 'N']:
-                return "cancel"
-            elif response in ['c', 'C']:
-                return "config"
-            elif response in ['a', 'A']:
-                return "append"
-            else:
-                return "create"
-        except KeyboardInterrupt:
-            print("\nCancelled", file=sys.stderr)
-            return "cancel"
-    
     async def create_todo(self, content: str, project_id: str, agent: AgentSettings) -> Dict[str, Any]:
         try:
             return await self.edge.add_message(
@@ -718,86 +685,53 @@ class TODOCLITool:
                 print(f"Agent {i}: {json.dumps(agent, indent=2)}", file=sys.stderr)
             print("="*50, file=sys.stderr)
 
-        while True:
-            # Select project
-            if args.project:
-                if projects:
-                    project = findBy(projects, lambda p: _get_item_id(p) == args.project)
-                    if not project:
-                        print(f"Error: Project ID '{args.project}' not found", file=sys.stderr)
-                        sys.exit(1)
-                    project_id, project_name = _get_item_id(project), _get_display_name(project)
-                else:
-                    project_id, project_name = args.project, args.project
-            elif self.config.data.get("default_project_id") and not projects:
-                # Fast path: use default without fetching list
-                project_id = self.config.data.get("default_project_id")
-                project_name = self.config.data.get("default_project_name") or project_id
+        # Select project
+        if args.project:
+            if projects:
+                project = findBy(projects, lambda p: _get_item_id(p) == args.project)
+                if not project:
+                    print(f"Error: Project ID '{args.project}' not found", file=sys.stderr)
+                    sys.exit(1)
+                project_id, project_name = _get_item_id(project), _get_display_name(project)
             else:
-                project_id, project_name = select_project(
-                    projects,
-                    default_project_id=self.config.data.get("default_project_id"),
-                    set_default=self.config.set_default_project
-                )
+                project_id, project_name = args.project, args.project
+        elif self.config.data.get("default_project_id") and not projects:
+            # Fast path: use default without fetching list
+            project_id = self.config.data.get("default_project_id")
+            project_name = self.config.data.get("default_project_name") or project_id
+        else:
+            project_id, project_name = select_project(
+                projects,
+                default_project_id=self.config.data.get("default_project_id"),
+                set_default=self.config.set_default_project
+            )
 
-            # Select agent
-            if pre_matched_agent:
-                agent = pre_matched_agent
-            elif args.agent:
-                # --agent flag requires fetching list to get full settings with id
-                agent = findBy(agents, lambda a: args.agent.lower() in _get_display_name(a).lower())
-                if not agent:
-                    print(f"Error: Agent '{args.agent}' not found", file=sys.stderr)
-                    print("Available agents:", file=sys.stderr)
-                    for a in agents:
-                        print(f"  - {_get_display_name(a)}", file=sys.stderr)
-                    sys.exit(1)
-                # Save as default for next time
-                self.config.set_default_agent(_get_display_name(agent), agent)
-            elif stored_agent and stored_agent.get("id") and not agents:
-                # Fast path: use stored settings with valid id
-                agent = stored_agent
-            else:
-                agent = select_agent(
-                    agents,
-                    default_agent_name=self.config.data.get("default_agent_name"),
-                    set_default=self.config.set_default_agent
-                )
-            
-            # Generate TODO ID if not provided
-            todo_id = args.todo_id or str(uuid.uuid4())
-            
-            # Confirmation loop with append support (no reselection needed)
-            proceed = False
-            while True:
-                action = self.confirm_creation(content, project_name, project_id, _get_display_name(agent), todo_id, args.yes)
-                
-                if action == "cancel":
-                    print("Cancelled", file=sys.stderr)
-                    sys.exit(1)
-                elif action == "config":
-                    print("\nQuick Settings Change", file=sys.stderr)
-                    await self.interactive_set_defaults()
-                    # Clear CLI args so we re-select with new defaults
-                    args.project = None
-                    args.agent = None
-                    break  # break inner loop to reselect with new defaults
-                elif action == "append":
-                    extra = _get_terminal_input("Enter text to append (empty to skip): ").strip()
-                    if extra:
-                        content = (content + ("\n" if content and not content.endswith("\n") else "") + extra)
-                        print("Appended.", file=sys.stderr)
-                    else:
-                        print("No changes.", file=sys.stderr)
-                    continue  # re-show confirmation with updated content
-                else:  # action == "create"
-                    proceed = True
-                    break
-            
-            if proceed:
-                break
-            else:
-                continue
+        # Select agent
+        if pre_matched_agent:
+            agent = pre_matched_agent
+        elif args.agent:
+            # --agent flag requires fetching list to get full settings with id
+            agent = findBy(agents, lambda a: args.agent.lower() in _get_display_name(a).lower())
+            if not agent:
+                print(f"Error: Agent '{args.agent}' not found", file=sys.stderr)
+                print("Available agents:", file=sys.stderr)
+                for a in agents:
+                    print(f"  - {_get_display_name(a)}", file=sys.stderr)
+                sys.exit(1)
+            # Save as default for next time
+            self.config.set_default_agent(_get_display_name(agent), agent)
+        elif stored_agent and stored_agent.get("id") and not agents:
+            # Fast path: use stored settings with valid id
+            agent = stored_agent
+        else:
+            agent = select_agent(
+                agents,
+                default_agent_name=self.config.data.get("default_agent_name"),
+                set_default=self.config.set_default_agent
+            )
+
+        # Generate TODO ID if not provided
+        todo_id = args.todo_id or str(uuid.uuid4())
 
         # Register embedded edge with the agent settings on the server so the
         # server-side agent can discover it and generate blocks for execution.
@@ -888,7 +822,7 @@ def main():
         epilog="""
 Examples:
   todoai "Research AI trends"               # Prompt as argument
-  todoai -y "Quick task"                    # Skip confirmation
+  todoai -p "Quick task"                    # Print mode (non-interactive)
   echo "Piped content" | todoai             # Pipe from stdin
   todoai --path /my/project "Fix the bug"  # Explicit workspace path
   todoai --edge "Run locally"               # Execute blocks in this process
@@ -909,7 +843,6 @@ Examples:
                         help='Continue the most recent todo for the current agent')
     parser.add_argument('--api-url', help='API URL (overrides environment and saved default)')
     parser.add_argument('--json', action='store_true', help='Output result as JSON')
-    parser.add_argument('--yes', '-y', action='store_true', help='Skip confirmation prompt')
     parser.add_argument('--no-watch', action='store_true', help='Create todo and exit without watching for completion')
     parser.add_argument('-p', '--print', action='store_true', dest='print_mode', help='Non-interactive: run single message and exit')
     parser.add_argument('--timeout', type=int, default=300, help='Watch timeout in seconds (default: 300)')
@@ -996,9 +929,6 @@ async def _async_main(cfg: TODOCLIConfig, args: argparse.Namespace) -> None:
         finally:
             await tool.stop_embedded_edge()
     else:
-        if args.edge is not None:
-            # Edge mode implies --yes (no interactive approval possible in headless)
-            args.yes = True
         await tool.run(args)
 
 if __name__ == "__main__":
