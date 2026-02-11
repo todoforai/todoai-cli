@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-TODOforAI CLI - Create todos from piped input
-Usage: echo "todo content" | todoai [options]
+TODOforAI CLI - Create and manage todos
+Usage: todoai "prompt text" | echo "content" | todoai [options]
 """
 
 import argparse
@@ -254,44 +254,17 @@ class TODOCLITool:
             return "shell"
 
         async def _approve_block(ws, block_id, message_id, block_payload, block_kind):
-            """Send the right approval message based on block kind."""
-            if not edge_id:
-                print("  \033[31m✗ No edge configured for approval\033[0m", file=sys.stderr)
-                return
-            if block_kind == "file":
-                # File creation/modification: send block:save so edge writes the file
-                filepath = (block_payload.get("path") or block_payload.get("filePath")
-                            or block_payload.get("file_path") or block_payload.get("filename") or "")
-                msg = {
-                    "type": "block:save",
-                    "payload": {
-                        "todoId": todo_id,
-                        "messageId": message_id,
-                        "blockId": block_id,
-                        "edgeId": edge_id,
-                        "filepath": filepath,
-                        "content": block_payload.get("content", ""),
-                        "rootPath": root_path,
-                    }
+            """Send BLOCK_APPROVAL_INTENT so backend handles the approval flow."""
+            msg = {
+                "type": "BLOCK_APPROVAL_INTENT",
+                "payload": {
+                    "todoId": todo_id,
+                    "messageId": message_id,
+                    "blockId": block_id,
+                    "decision": "allow_once",
                 }
-                await ws.ws.send(json.dumps(msg))
-            elif block_kind == "mcp":
-                msg = {
-                    "type": "block:mcp_execute",
-                    "payload": {
-                        "todoId": todo_id,
-                        "messageId": message_id,
-                        "blockId": block_id,
-                        "edgeId": edge_id,
-                        **{k: v for k, v in block_payload.items()
-                           if k not in ("userId", "messageId", "todoId", "blockId")},
-                    }
-                }
-                await ws.ws.send(json.dumps(msg))
-            else:
-                # Shell / default
-                await ws.send_block_execute(todo_id, message_id, block_id, edge_id,
-                                            block_payload.get("content", ""), root_path)
+            }
+            await ws.ws.send(json.dumps(msg))
 
         async def handle_approval(ws, block_info):
             nonlocal approve_all
@@ -714,8 +687,11 @@ class TODOCLITool:
                     print(f"Error: Failed to auto-create agent: {e}", file=sys.stderr)
                     sys.exit(1)
 
-        # Read content from stdin
-        content = self.read_stdin()
+        # Read content from positional prompt args, stdin, or interactive input
+        if args.prompt:
+            content = ' '.join(args.prompt)
+        else:
+            content = self.read_stdin()
 
         # Check if we can skip fetching lists (have defaults or CLI args)
         has_project = args.project or self.config.data.get("default_project_id")
@@ -911,18 +887,18 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  echo "Research AI trends" | todoai        # Creates and watches
-  echo "Quick task" | todoai -y             # Skip confirmation
-  echo "Fire and forget" | todoai --no-watch
-  echo "Long task" | todoai --timeout 600   # 10 min timeout
-  echo "Run locally" | todoai --edge        # Execute blocks in this process
-  echo "Run in dir" | todoai --edge /app    # Execute blocks in /app
+  todoai "Research AI trends"               # Prompt as argument
+  todoai -y "Quick task"                    # Skip confirmation
+  echo "Piped content" | todoai             # Pipe from stdin
+  todoai --path /my/project "Fix the bug"  # Explicit workspace path
+  todoai --edge "Run locally"               # Execute blocks in this process
         """
     )
     # Ensure first Ctrl+C exits immediately with a message (exit code 130 = SIGINT)
     signal.signal(signal.SIGINT, _exit_on_sigint)
 
-    parser.add_argument('path', nargs='?', default='.', help='Workspace path (auto-selects agent by matching workspacePaths, defaults to cwd)')
+    parser.add_argument('prompt', nargs='*', help='Prompt text (if omitted, reads from stdin or interactive input)')
+    parser.add_argument('--path', default='.', help='Workspace path (auto-selects agent by matching workspacePaths, defaults to cwd)')
     parser.add_argument('--project', help='Project ID (will prompt if not provided)')
     parser.add_argument('--agent', '-a', help='Agent name (partial match, will prompt if not provided)')
     parser.add_argument('--todo-id', help='Custom TODO ID (auto-generated if not provided)')
