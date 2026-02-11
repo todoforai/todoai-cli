@@ -700,7 +700,7 @@ class TODOCLITool:
             agents = await self.get_agents()
             agent, matched_wp = _find_agent_by_path(agents, args.path)
             if agent:
-                print(f"Auto-selected agent by path: {_get_display_name(agent)} (workspace: {matched_wp})", file=sys.stderr)
+                print(f"AgentSettings: {_get_display_name(agent)} Paths: {_get_agent_workspace_paths(agent)}", file=sys.stderr)
                 self.config.set_default_agent(_get_display_name(agent), agent)
                 pre_matched_agent = agent
             else:
@@ -708,7 +708,7 @@ class TODOCLITool:
                 print(f"No agent found for '{resolved}', creating one...", file=sys.stderr)
                 try:
                     pre_matched_agent = await self._auto_create_agent(resolved, agents)
-                    print(f"Created agent '{pre_matched_agent['name']}' with workspace: {resolved}", file=sys.stderr)
+                    print(f"AgentSettings: {pre_matched_agent['name']} Paths: {_get_agent_workspace_paths(pre_matched_agent)}", file=sys.stderr)
                     self.config.set_default_agent(pre_matched_agent['name'], pre_matched_agent)
                 except Exception as e:
                     print(f"Error: Failed to auto-create agent: {e}", file=sys.stderr)
@@ -853,6 +853,8 @@ class TODOCLITool:
         
         # Get the actual todo ID from response
         actual_todo_id = todo.get('id', todo_id)
+        self.config.data["last_todo_id"] = actual_todo_id
+        self.config.save_config()
         frontend_url = self._get_frontend_url(project_id, actual_todo_id)
 
         # Output result
@@ -868,8 +870,8 @@ class TODOCLITool:
             auto_approve = args.edge is not None
             await self.watch_todo(actual_todo_id, project_id, args.timeout, args.json, agent, auto_approve=auto_approve)
 
-        # Interactive mode - continue conversation
-        if args.interactive and not args.no_watch:
+        # Interactive mode (default) - continue conversation
+        if not args.print_mode and not args.no_watch:
             print("\n" + "─" * 40, file=sys.stderr)
             session = create_session()
             auto_approve = args.edge is not None
@@ -921,18 +923,22 @@ Examples:
     signal.signal(signal.SIGINT, _exit_on_sigint)
 
     parser.add_argument('path', nargs='?', default='.', help='Workspace path (auto-selects agent by matching workspacePaths, defaults to cwd)')
-    parser.add_argument('--project', '-p', help='Project ID (will prompt if not provided)')
+    parser.add_argument('--project', help='Project ID (will prompt if not provided)')
     parser.add_argument('--agent', '-a', help='Agent name (partial match, will prompt if not provided)')
     parser.add_argument('--todo-id', help='Custom TODO ID (auto-generated if not provided)')
-    parser.add_argument('--resume', '-r', metavar='TODO_ID', help='Resume existing todo')
+    # TODO: --resume without ID should list todos for the agentSettings matched by path/folder
+    parser.add_argument('--resume', '-r', metavar='TODO_ID', nargs='?', const='__pick__',
+                        help='Resume existing todo (without ID: show picker for current agent)')
+    parser.add_argument('--continue', '-c', action='store_true', dest='continue_last',
+                        help='Continue the most recent todo for the current agent')
     parser.add_argument('--api-url', help='API URL (overrides environment and saved default)')
     parser.add_argument('--json', action='store_true', help='Output result as JSON')
     parser.add_argument('--yes', '-y', action='store_true', help='Skip confirmation prompt')
     parser.add_argument('--no-watch', action='store_true', help='Create todo and exit without watching for completion')
-    parser.add_argument('-i', '--interactive', action='store_true', help='Stay in interactive mode after completion')
+    parser.add_argument('-p', '--print', action='store_true', dest='print_mode', help='Non-interactive: run single message and exit')
     parser.add_argument('--timeout', type=int, default=300, help='Watch timeout in seconds (default: 300)')
     parser.add_argument('--safe', action='store_true', help='Validate API key and fetch lists upfront')
-    parser.add_argument('--debug', action='store_true', help='Enable debug output')
+    parser.add_argument('-d', '--debug', action='store_true', help='Enable debug output')
     parser.add_argument('--edge', nargs='?', const='.', default=None, metavar='WORKSPACE',
                         help='Start embedded edge for local block execution (optionally specify workspace path, default: cwd)')
     parser.add_argument('--config-path', metavar='PATH', help='Custom config file path')
@@ -994,12 +1000,23 @@ async def _async_main(cfg: TODOCLIConfig, args: argparse.Namespace) -> None:
     """Async entry point for the main CLI workflow."""
     tool = TODOCLITool(cfg)
 
-    if args.resume:
+    if args.resume or args.continue_last:
         await tool.init_edge(args.api_url, skip_validation=not args.safe)
         if args.edge is not None:
             await tool.start_embedded_edge(workspace_path=os.path.abspath(args.edge))
         try:
-            await tool.resume_todo(args.resume, args.timeout, args.json, auto_approve=args.edge is not None)
+            todo_id = args.resume if (args.resume and args.resume != '__pick__') else None
+            if not todo_id:
+                # -c or --resume without ID: resolve from current agent's todos
+                # TODO: fetch todos for the agentSettings matched by path,
+                #       for -c pick the most recent, for --resume show a picker
+                last_todo_id = cfg.data.get("last_todo_id")
+                if last_todo_id:
+                    todo_id = last_todo_id
+                else:
+                    print("Error: No recent todo found for this agent", file=sys.stderr)
+                    sys.exit(1)
+            await tool.resume_todo(todo_id, args.timeout, args.json, auto_approve=args.edge is not None)
         finally:
             await tool.stop_embedded_edge()
     else:
