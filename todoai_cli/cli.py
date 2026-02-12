@@ -610,7 +610,7 @@ class TODOCLITool:
             "agentSettingsId": agent_settings_id,
             "edgeId": edge_id,
             "mcpName": "todoai_edge",
-            "config": {"workspacePaths": [resolved_path], "isActive": True}
+            "config": {"workspacePaths": [resolved_path]}
         })
 
         # 5. Re-fetch full agent from server (has ownerId etc.)
@@ -621,7 +621,7 @@ class TODOCLITool:
         # Fallback: return create response merged with essentials
         resp["name"] = folder_name
         resp["edgesMcpConfigs"] = {
-            edge_id: {"todoai_edge": {"workspacePaths": [resolved_path], "isActive": True}}
+            edge_id: {"todoai_edge": {"workspacePaths": [resolved_path]}}
         }
         return resp
 
@@ -740,7 +740,6 @@ class TODOCLITool:
             agent_id = agent.get("id", "")
             wp = os.path.abspath(args.edge) if args.edge else "."
             edge_mcp_config = {
-                "isActive": True,
                 "workspacePaths": [wp],
             }
             # Update server-side agent settings
