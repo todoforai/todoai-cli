@@ -53,7 +53,7 @@ def create_session() -> PromptSession:
     history_path = Path.home() / ".config" / "todoai-cli" / "history"
     history_path.parent.mkdir(parents=True, exist_ok=True)
 
-    completer = WordCompleter(COMMANDS, ignore_case=True)
+    completer = WordCompleter(COMMANDS, ignore_case=True, sentence=True)
     tty_input = _get_tty_input()
 
     return PromptSession(

@@ -1,3 +1,5 @@
+import asyncio
+import os
 import sys
 from typing import Callable, List, Dict, Tuple, Optional
 
@@ -112,6 +114,45 @@ def _get_single_char_input(prompt: str) -> str:
     except (KeyboardInterrupt, EOFError):
         print("\n", file=sys.stderr)
         raise
+
+
+async def _async_single_char_input(prompt: str) -> str:
+    """Fully async single-char input using add_reader. Cancellable via task.cancel()."""
+    try:
+        import termios
+        import tty
+
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        tty_fd = os.open("/dev/tty", os.O_RDWR)
+        old_settings = termios.tcgetattr(tty_fd)
+        tty.setcbreak(tty_fd)
+        termios.tcflush(tty_fd, termios.TCIFLUSH)
+        print(prompt, end='', file=sys.stderr)
+        sys.stderr.flush()
+
+        def _on_readable():
+            try:
+                ch = os.read(tty_fd, 1).decode("utf-8", errors="ignore")
+                if not future.done():
+                    future.set_result(ch)
+            except Exception as e:
+                if not future.done():
+                    future.set_exception(e)
+
+        loop.add_reader(tty_fd, _on_readable)
+        try:
+            ch = await future
+            decoded = ch.lower() if ch not in ("\n", "\r", "") else ""
+            print(decoded or "", file=sys.stderr)
+            return decoded[:1] if decoded else "y"
+        finally:
+            loop.remove_reader(tty_fd)
+            termios.tcsetattr(tty_fd, termios.TCSADRAIN, old_settings)
+            os.close(tty_fd)
+    except (ImportError, OSError):
+        # Fallback: use to_thread with sync version
+        return await asyncio.to_thread(_get_single_char_input, prompt)
 
 
 def select_project(projects: List[ProjectListItem], default_project_id: Optional[str], set_default: Callable[[str, str], None]) -> Tuple[str, str]:
