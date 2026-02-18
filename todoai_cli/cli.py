@@ -310,16 +310,25 @@ class TODOCLITool:
         if args.edge is not None:
             await self.start_embedded_edge(workspace_path=os.path.abspath(args.edge))
 
-        # Pre-resolve agent by workspace path BEFORE prompting for input
+        # Pre-resolve agent BEFORE prompting for input (by --agent name or workspace path)
         pre_matched_agent = None
-        if args.path:
+        agents = None
+        if args.agent:
+            agents = await self.get_agents()
+            pre_matched_agent = findBy(
+                agents, lambda a: args.agent.lower() in _get_display_name(a).lower()
+            )
+            if not pre_matched_agent:
+                print(f"Error: Agent '{args.agent}' not found", file=sys.stderr)
+                print("Available agents:", file=sys.stderr)
+                for a in agents:
+                    print(f"  - {_get_display_name(a)}", file=sys.stderr)
+                sys.exit(1)
+            self.config.set_default_agent(_get_display_name(pre_matched_agent), pre_matched_agent)
+        elif args.path:
             agents = await self.get_agents()
             agent, matched_wp = _find_agent_by_path(agents, args.path)
             if agent:
-                print(
-                    f"AgentSettings: {_get_display_name(agent)} Paths: {_get_agent_workspace_paths(agent)}",
-                    file=sys.stderr,
-                )
                 self.config.set_default_agent(_get_display_name(agent), agent)
                 pre_matched_agent = agent
             else:
@@ -329,16 +338,18 @@ class TODOCLITool:
                 )
                 try:
                     pre_matched_agent = await self._auto_create_agent(resolved, agents)
-                    print(
-                        f"AgentSettings: {pre_matched_agent['name']} Paths: {_get_agent_workspace_paths(pre_matched_agent)}",
-                        file=sys.stderr,
-                    )
                     self.config.set_default_agent(
                         pre_matched_agent["name"], pre_matched_agent
                     )
                 except Exception as e:
                     print(f"Error: Failed to auto-create agent: {e}", file=sys.stderr)
                     sys.exit(1)
+
+        if pre_matched_agent:
+            print(
+                f"AgentSettings: {_get_display_name(pre_matched_agent)} Paths: {_get_agent_workspace_paths(pre_matched_agent)}",
+                file=sys.stderr,
+            )
 
         # Read content from positional prompt args, stdin, or interactive input
         if args.prompt:
@@ -357,7 +368,6 @@ class TODOCLITool:
 
         # Only fetch lists if needed for selection (or --safe mode)
         projects = None
-        agents = agents if args.path else None
         if not has_project or not has_agent or args.safe or args.debug:
             projects = await self.get_projects()
             if not agents:
@@ -402,19 +412,6 @@ class TODOCLITool:
         # Select agent
         if pre_matched_agent:
             agent = pre_matched_agent
-        elif args.agent:
-            # --agent flag requires fetching list to get full settings with id
-            agent = findBy(
-                agents, lambda a: args.agent.lower() in _get_display_name(a).lower()
-            )
-            if not agent:
-                print(f"Error: Agent '{args.agent}' not found", file=sys.stderr)
-                print("Available agents:", file=sys.stderr)
-                for a in agents:
-                    print(f"  - {_get_display_name(a)}", file=sys.stderr)
-                sys.exit(1)
-            # Save as default for next time
-            self.config.set_default_agent(_get_display_name(agent), agent)
         elif stored_agent and stored_agent.get("id") and not agents:
             # Fast path: use stored settings with valid id
             agent = stored_agent
