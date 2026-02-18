@@ -88,7 +88,6 @@ async def watch_todo(
         "todo:msg_meta_ai",
         "todo:status",
         "block:end",
-        "block:start_text",
         "block:start_shell",
         "block:start_createfile",
         "block:start_modifyfile",
