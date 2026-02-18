@@ -84,7 +84,6 @@ async def watch_todo(
     ignore = {
         "todo:msg_start",
         "todo:msg_done",
-        "todo:msg_error",
         "todo:msg_stop_sequence",
         "todo:msg_meta_ai",
         "todo:status",
@@ -239,13 +238,7 @@ async def watch_todo(
         print()
         if not result.get("success"):
             msg_type = result.get("type", "unknown")
-            if msg_type == "todo:msg_error":
-                print(
-                    f"Error: {result.get('payload', {}).get('error', 'unknown')}",
-                    file=sys.stderr,
-                )
-            else:
-                print(f"Warning: Stopped: {msg_type}", file=sys.stderr)
+            print(f"Warning: Stopped: {msg_type}", file=sys.stderr)
         return True
     except asyncio.CancelledError:
         if not suppress_cancel_notice:
