@@ -87,6 +87,7 @@ async def watch_todo(
         "todo:msg_stop_sequence",
         "todo:msg_meta_ai",
         "todo:status",
+        "todo:new_message_created",
         "block:end",
         "block:start_shell",
         "block:start_createfile",
@@ -118,11 +119,11 @@ async def watch_todo(
                     f"\n\033[33m⚠ Awaiting approval{suffix}\033[0m", file=sys.stderr
                 )
                 _signal_activity()
-            elif status:
+            elif status and status not in ("COMPLETED", "RUNNING"):
                 print(f"\n[block:update] status={status}", file=sys.stderr)
                 _signal_activity()
         elif msg_type == "block:start_universal":
-            skip = {"userId", "messageId", "todoId", "blockId", "block_type"}
+            skip = {"userId", "messageId", "todoId", "blockId", "block_type", "edge_id", "timeout"}
             block_type = payload.get("block_type", "UNIVERSAL")
             info = {k: v for k, v in payload.items() if k not in skip}
             parts = [f"{k}={v}" for k, v in info.items()]

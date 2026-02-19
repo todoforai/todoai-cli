@@ -510,6 +510,7 @@ class TODOCLITool:
             await interactive_loop(_watch, _send)
 
         # Clean up embedded edge if running
+        await self.edge.close_frontend_ws()
         await self.stop_embedded_edge()
 
 
