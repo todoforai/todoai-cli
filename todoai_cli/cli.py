@@ -55,7 +55,7 @@ def _find_agent_by_path(agents: list, path: str):
     for agent in agents:
         for wp in _get_agent_workspace_paths(agent):
             wp_resolved = os.path.realpath(wp)
-            if resolved == wp_resolved or resolved.startswith(wp_resolved + os.sep):
+            if resolved == wp_resolved:
                 return agent, wp_resolved
     return None, None
 
