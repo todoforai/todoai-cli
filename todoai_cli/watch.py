@@ -23,7 +23,9 @@ def _classify_block(block_info):
         return "read"
     if "mcp" in btype or inner == "mcp":
         return "mcp"
-    return "shell"
+    if "shell" in btype or inner in ("shell", "bash") or bp.get("cmd"):
+        return "shell"
+    return "unknown"
 
 
 def _block_display(block_info):
@@ -31,19 +33,24 @@ def _block_display(block_info):
     labels = {"file": "File", "read": "Read File", "mcp": "MCP", "shell": "Shell"}
     block_payload = block_info.get("payload", {})
     block_kind = _classify_block(block_info)
-    type_label = labels.get(block_kind, "Shell")
+    inner = block_payload.get("block_type", "")
+    type_label = labels.get(block_kind, inner or "Tool")
+    skip_keys = {"userId", "messageId", "todoId", "blockId", "block_type", "edge_id", "timeout"}
+    known_keys = {"path", "filePath", "content", "cmd", "name"}
     display = (
         block_payload.get("path")
         or block_payload.get("filePath")
         or block_payload.get("content")
-        or block_payload.get("command")
+        or block_payload.get("cmd")
         or block_payload.get("name")
         or ""
     )
+    rest = {k: v for k, v in block_payload.items() if k not in skip_keys | known_keys and v}
+    if rest:
+        extra = " ".join(f"{k}={v}" for k, v in rest.items())
+        display = f"{display} ({extra})" if display else extra
     if not display:
-        skip_keys = {"userId", "messageId", "todoId", "blockId", "block_type"}
-        useful = {k: v for k, v in block_payload.items() if k not in skip_keys and v}
-        display = str(useful) if useful else "<pending>"
+        display = "<pending>"
     if len(display) > 200:
         display = display[:200] + "..."
     return type_label, display
