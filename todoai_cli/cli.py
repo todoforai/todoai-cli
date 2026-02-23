@@ -224,7 +224,7 @@ class TODOCLITool:
         async def _send(content):
             await self.edge.add_message(
                 project_id=project_id, content=content,
-                agent_settings=agent, todo_id=todo_id, allow_queue=True,
+                agent_settings=agent, todo_id=todo_id,
             )
 
         await interactive_loop(_watch, _send)
@@ -504,7 +504,7 @@ class TODOCLITool:
             async def _send(content):
                 await self.edge.add_message(
                     project_id=project_id, content=content,
-                    agent_settings=agent, todo_id=actual_todo_id, allow_queue=True,
+                    agent_settings=agent, todo_id=actual_todo_id,
                 )
 
             await interactive_loop(_watch, _send)
