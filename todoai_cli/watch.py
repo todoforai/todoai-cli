@@ -183,15 +183,15 @@ async def watch_todo(
         for bi in blocks:
             tl, disp = _block_display(bi)
             print(f"  [{tl}] {disp}", file=sys.stderr)
+            ctx = bi.get("approvalContext") or {}
+            tool_installs = ctx.get("toolInstalls", [])
+            if tool_installs:
+                print(f"  \033[36m↳ Install tools: {', '.join(tool_installs)}\033[0m", file=sys.stderr)
 
         try:
             response = await _async_single_char_input("  [Y]es / [n]o / [a]ll? ")
         except asyncio.CancelledError:
-            print("\n  (auto-approved — already executed)", file=sys.stderr)
-            for bi in blocks:
-                await _approve_block(
-                    ws, bi.get("blockId"), bi.get("messageId"), todo_id
-                )
+            print("\n  (approval prompt cancelled — skipping)", file=sys.stderr)
             return
         except (KeyboardInterrupt, EOFError):
             response = "n"
