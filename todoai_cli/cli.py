@@ -10,7 +10,6 @@ import json
 import os
 import sys
 import uuid
-import signal
 from typing import Optional, List, Dict, Any
 
 from todoforai_edge.utils import findBy, async_request
@@ -32,12 +31,6 @@ from .logo import print_logo
 from .watch import watch_todo as _watch_todo
 from .interactive import interactive_loop
 from .cli_args import build_parser, handle_config_commands
-
-
-def _exit_on_sigint(signum, frame):
-    """Handle SIGINT (Ctrl+C) by exiting with a message and code 130."""
-    print("\nCancelled by user (Ctrl+C)", file=sys.stderr)
-    sys.exit(130)
 
 
 def _get_agent_workspace_paths(agent: dict) -> list:
@@ -518,9 +511,6 @@ class TODOCLITool:
 
 def main():
     parser = build_parser()
-    # Ensure first Ctrl+C exits immediately with a message (exit code 130 = SIGINT)
-    signal.signal(signal.SIGINT, _exit_on_sigint)
-
     args = parser.parse_args()
 
     # Build config (with optional custom path)
@@ -537,7 +527,7 @@ def main():
     # Main async execution
     try:
         asyncio.run(_async_main(cfg, args))
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         pass
 
 

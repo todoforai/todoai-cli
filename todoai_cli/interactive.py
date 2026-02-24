@@ -14,7 +14,7 @@ async def _cancel_task(task):
         task.cancel()
         try:
             await task
-        except (asyncio.CancelledError, EOFError):
+        except (asyncio.CancelledError, EOFError, KeyboardInterrupt):
             pass
 
 
@@ -31,6 +31,7 @@ async def interactive_loop(watch_fn, send_fn):
     send_fn(content) -> None
     """
     session = create_session()
+    watch_task = input_task = activity_task = None
     with patch_stdout(raw=True):
         while True:
             try:
@@ -79,4 +80,7 @@ async def interactive_loop(watch_fn, send_fn):
                 await send_fn(follow_up)
                 await watch_fn(interrupt_on_cancel=True, suppress_cancel_notice=False)
             except (KeyboardInterrupt, EOFError):
+                # Clean up any pending tasks from this iteration
+                for t in [watch_task, input_task, activity_task]:
+                    await _cancel_task(t)
                 break

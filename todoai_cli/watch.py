@@ -232,7 +232,12 @@ async def watch_todo(
         interrupt_count += 1
         if interrupt_count >= 2:
             print(f"\n{RED}Force exit (double Ctrl+C){RESET}", file=sys.stderr)
-            sys.exit(130)
+            # Restore default handler so next Ctrl+C kills immediately,
+            # then cancel all running tasks so the loop can shut down cleanly.
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            for task in asyncio.all_tasks():
+                task.cancel()
+            return
         print(
             f"\n{YELLOW}Interrupting... (Ctrl+C again to force exit){RESET}",
             file=sys.stderr,

@@ -5,11 +5,12 @@ from pathlib import Path
 from typing import Optional
 
 from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.input import create_input
 from prompt_toolkit.input.base import Input
+from prompt_toolkit.key_binding import KeyBindings
 
 COMMANDS = ["/help", "/exit", "/quit", "/q"]
 
@@ -56,11 +57,21 @@ def create_session() -> PromptSession:
     completer = WordCompleter(COMMANDS, ignore_case=True, sentence=True)
     tty_input = _get_tty_input()
 
+    # In multiline mode, Enter inserts newline by default — rebind it to submit.
+    # This lets pasted multiline text arrive as one string while Enter still submits.
+    kb = KeyBindings()
+
+    @kb.add("enter")
+    def _(event):
+        event.current_buffer.validate_and_handle()
+
     return PromptSession(
         completer=completer,
         auto_suggest=AutoSuggestFromHistory(),
         history=FileHistory(str(history_path)),
         input=tty_input,
+        multiline=True,
+        key_bindings=kb,
     )
 
 
@@ -71,4 +82,7 @@ def close_session() -> None:
 
 async def get_interactive_input(session: PromptSession, prompt: str = "\u276f ") -> str:
     """Get input with completions and history (async)."""
-    return (await session.prompt_async(prompt)).strip()
+    try:
+        return (await session.prompt_async(prompt)).strip()
+    except KeyboardInterrupt:
+        raise EOFError()
