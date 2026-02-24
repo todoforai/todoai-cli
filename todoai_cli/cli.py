@@ -346,8 +346,11 @@ class TODOCLITool:
                     sys.exit(1)
 
         if pre_matched_agent:
+            paths = _get_agent_workspace_paths(pre_matched_agent)
+            path_label = "Path" if len(paths) == 1 else "Paths"
+            path_str = paths[0] if len(paths) == 1 else str(paths)
             print(
-                f"AgentSettings: {_get_display_name(pre_matched_agent)} Paths: {_get_agent_workspace_paths(pre_matched_agent)}",
+                f"\033[90mAgent:\033[0m \033[38;2;249;110;46m{_get_display_name(pre_matched_agent)}\033[0m \033[90m│ {path_label}:\033[0m \033[36m{path_str}\033[0m",
                 file=sys.stderr,
             )
 
@@ -458,7 +461,6 @@ class TODOCLITool:
             agent["edgesMcpConfigs"] = configs
 
         # Create TODO
-        print(f"\nCreating TODO...", file=sys.stderr)
         todo = await self.create_todo(content, project_id, agent)
 
         # Get the actual todo ID from response
@@ -473,7 +475,7 @@ class TODOCLITool:
             todo_with_url["frontend_url"] = frontend_url
             print(json.dumps(todo_with_url, indent=2))
         else:
-            print(f"TODO created: {frontend_url}", file=sys.stderr)
+            print(f"\033[90mTODO:\033[0m \033[36m{frontend_url}\033[0m", file=sys.stderr)
 
         # Watch for completion (default behavior)
         if not args.no_watch:
@@ -533,7 +535,10 @@ def main():
         print_logo()
 
     # Main async execution
-    asyncio.run(_async_main(cfg, args))
+    try:
+        asyncio.run(_async_main(cfg, args))
+    except KeyboardInterrupt:
+        pass
 
 
 async def _async_main(cfg: TODOCLIConfig, args: argparse.Namespace) -> None:

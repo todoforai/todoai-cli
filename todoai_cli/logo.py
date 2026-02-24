@@ -93,10 +93,10 @@ WORD = 'todo4ai'
 
 def _render_half_block(top, bot):
     """Map a (top, bottom) pixel pair to an ANSI half-block string."""
-    W  = '\033[97m'     # bright white fg
-    G  = '\033[90m'     # gray fg
-    BW = '\033[107m'    # bright white bg
-    BG = '\033[100m'    # gray bg
+    W  = '\033[38;2;249;110;46m'   # brand orange fg (#f96e2e)
+    G  = '\033[38;2;140;60;20m'   # dark orange fg (fade)
+    BW = '\033[48;2;249;110;46m'  # brand orange bg
+    BG = '\033[48;2;140;60;20m'   # dark orange bg (fade)
     R  = '\033[0m'
 
     if top == ' ' and bot == ' ':

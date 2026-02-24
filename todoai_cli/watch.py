@@ -7,6 +7,7 @@ import sys
 
 from todoforai_edge.frontend_ws import TodoStreamError
 
+from .message_display import YELLOW, GREEN, RED, DIM, CYAN, RESET
 from .project_selectors import _async_single_char_input
 
 
@@ -101,6 +102,8 @@ async def watch_todo(
         "block:start_modifyfile",
         "block:start_mcp",
         "block:start_catfile",
+        "block:sh_msg_start",
+        "block:sh_done",
     }
 
     def _signal_activity():
@@ -117,13 +120,13 @@ async def watch_todo(
             status = updates.get("status")
             result = updates.get("result")
             if result:
-                print(f"\n--- Block Result ---\n{result}", file=sys.stderr)
+                print(f"\n{DIM}--- Block Result ---\n{result}{RESET}", file=sys.stderr)
                 _signal_activity()
             elif status == "AWAITING_APPROVAL":
                 block_id = payload.get("blockId", "")
                 suffix = f" ({block_id})" if block_id else ""
                 print(
-                    f"\n\033[33m⚠ Awaiting approval{suffix}\033[0m", file=sys.stderr
+                    f"\n{YELLOW}⚠ Awaiting approval{suffix}{RESET}", file=sys.stderr
                 )
                 _signal_activity()
             elif status and status not in ("COMPLETED", "RUNNING"):
@@ -135,8 +138,16 @@ async def watch_todo(
             info = {k: v for k, v in payload.items() if k not in skip}
             parts = [f"{k}={v}" for k, v in info.items()]
             extra = f" {' '.join(parts)}" if parts else ""
-            print(f"\n\033[32m*\033[0m {block_type}{extra}", file=sys.stderr)
+            print(f"\n{YELLOW}*{RESET} {YELLOW}{block_type}{RESET}{extra}", file=sys.stderr)
             _signal_activity()
+        elif msg_type == "block:sh_msg_result":
+            content = payload.get("content", "")
+            if content:
+                lines = content.strip().splitlines()
+                preview = "\n".join(f"  {DIM}│{RESET} {l}" for l in lines[:4])
+                extra = f"\n  {DIM}│ +{len(lines) - 4} lines{RESET}" if len(lines) > 4 else ""
+                print(f"{preview}{extra}", file=sys.stderr)
+                _signal_activity()
         elif msg_type not in ignore:
             print(f"\n[{msg_type}]", file=sys.stderr)
             _signal_activity()
@@ -168,7 +179,7 @@ async def watch_todo(
             for bi in blocks:
                 tl, disp = _block_display(bi)
                 print(
-                    f"\n\033[33m⚠ Auto-approving [{tl}]\033[0m {disp}",
+                    f"\n{YELLOW}⚠ Auto-approving [{tl}]{RESET} {disp}",
                     file=sys.stderr,
                 )
                 await _approve_block(
@@ -178,15 +189,15 @@ async def watch_todo(
 
         n = len(blocks)
         print(
-            f"\n\033[33m⚠ {n} action(s) awaiting approval:\033[0m", file=sys.stderr
+            f"\n{YELLOW}⚠ {n} action(s) awaiting approval:{RESET}", file=sys.stderr
         )
         for bi in blocks:
             tl, disp = _block_display(bi)
-            print(f"  [{tl}] {disp}", file=sys.stderr)
+            print(f"  {YELLOW}[{tl}]{RESET} {disp}", file=sys.stderr)
             ctx = bi.get("approvalContext") or {}
             tool_installs = ctx.get("toolInstalls", [])
             if tool_installs:
-                print(f"  \033[36m↳ Install tools: {', '.join(tool_installs)}\033[0m", file=sys.stderr)
+                print(f"  {CYAN}↳ Install tools: {', '.join(tool_installs)}{RESET}", file=sys.stderr)
 
         try:
             response = await _async_single_char_input("  [Y]es / [n]o / [a]ll? ")
@@ -210,7 +221,7 @@ async def watch_todo(
                 await ws.send_block_deny(
                     todo_id, bi.get("messageId"), bi.get("blockId")
                 )
-            print("  \033[31m✗ Denied\033[0m", file=sys.stderr)
+            print(f"  {RED}✗ Denied{RESET}", file=sys.stderr)
 
     # Set up interrupt handling with double Ctrl+C to force exit
     watch_task = None
@@ -220,10 +231,10 @@ async def watch_todo(
         nonlocal interrupt_count
         interrupt_count += 1
         if interrupt_count >= 2:
-            print("\n\033[31mForce exit (double Ctrl+C)\033[0m", file=sys.stderr)
+            print(f"\n{RED}Force exit (double Ctrl+C){RESET}", file=sys.stderr)
             sys.exit(130)
         print(
-            "\n\033[33mInterrupting... (Ctrl+C again to force exit)\033[0m",
+            f"\n{YELLOW}Interrupting... (Ctrl+C again to force exit){RESET}",
             file=sys.stderr,
         )
         if watch_task:
@@ -249,7 +260,7 @@ async def watch_todo(
         return True
     except asyncio.CancelledError:
         if not suppress_cancel_notice:
-            print("\033[33mInterrupted\033[0m", file=sys.stderr)
+            print(f"{YELLOW}Interrupted{RESET}", file=sys.stderr)
         return False
     except TodoStreamError as e:
         print(f"Error: Stream error: {e}", file=sys.stderr)

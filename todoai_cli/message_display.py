@@ -7,6 +7,11 @@ from typing import Dict, Any, Callable, List, Optional
 BLUE = "\033[34m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
+RED = "\033[31m"
+DIM = "\033[90m"
+CYAN = "\033[36m"
+ORANGE = "\033[38;5;208m"
+BOLD = "\033[1m"
 RESET = "\033[0m"
 
 
