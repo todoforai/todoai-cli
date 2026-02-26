@@ -1,3 +1,9 @@
+# @deprecated
+
+This project is deprecated in favor of [todoforai/cli-bun](https://github.com/todoforai/cli-bun).
+
+---
+
 # TODOforAI CLI
 
 A command-line interface for creating TODOs from piped input using [TODOfor.ai](https://todofor.ai).
