@@ -94,7 +94,6 @@ async def watch_todo(
         "todo:msg_done",
         "todo:msg_stop_sequence",
         "todo:msg_meta_ai",
-        "todo:status",
         "todo:new_message_created",
         "block:end",
         "block:start_shell",
@@ -148,6 +147,10 @@ async def watch_todo(
                 extra = f"\n  {DIM}│ +{len(lines) - 4} lines{RESET}" if len(lines) > 4 else ""
                 print(f"{preview}{extra}", file=sys.stderr)
                 _signal_activity()
+        elif msg_type == "todo:status":
+            status = payload.get("status", "")
+            print(f"\n{DIM}[todo:status] {status}{RESET}", file=sys.stderr)
+            _signal_activity()
         elif msg_type not in ignore:
             print(f"\n[{msg_type}]", file=sys.stderr)
             _signal_activity()
@@ -271,7 +274,6 @@ async def watch_todo(
         print(f"Error: Stream error: {e}", file=sys.stderr)
         sys.exit(1)
     except asyncio.TimeoutError:
-        print(f"\nTimeout after {timeout}s", file=sys.stderr)
-        sys.exit(1)
+        raise
     finally:
         signal.signal(signal.SIGINT, old_handler)

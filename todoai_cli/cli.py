@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 import uuid
 from typing import Optional, List, Dict, Any
 
@@ -471,21 +472,42 @@ class TODOCLITool:
             print(f"\033[90mTODO:\033[0m \033[36m{frontend_url}\033[0m", file=sys.stderr)
 
         # Watch for completion (default behavior)
+        auto_approve = args.edge is not None or args.skip_permissions
         if not args.no_watch:
-            auto_approve = args.edge is not None
-            await self.watch_todo(
-                actual_todo_id,
-                project_id,
-                args.timeout,
-                args.json,
-                agent,
-                auto_approve=auto_approve,
-            )
+            async def _do_watch(timeout):
+                return await self.watch_todo(
+                    actual_todo_id, project_id, timeout,
+                    args.json, agent, auto_approve=auto_approve,
+                )
+
+            if args.non_interactive:
+                # In print mode, keep watching across multiple agent turns.
+                # Each watch_todo returns after one turn (todo:msg_done).
+                # We re-watch with a short idle timeout: if a new turn starts
+                # within IDLE_TIMEOUT seconds, continue; otherwise we're done.
+                IDLE_TIMEOUT = 60
+                deadline = time.monotonic() + args.timeout
+                try:
+                    await _do_watch(args.timeout)
+                except asyncio.TimeoutError:
+                    print(f"\nTimeout after {args.timeout}s", file=sys.stderr)
+                # Subsequent turns: use short idle timeout
+                while time.monotonic() < deadline:
+                    remaining = deadline - time.monotonic()
+                    try:
+                        if not await _do_watch(min(IDLE_TIMEOUT, int(max(remaining, 1)))):
+                            break
+                    except asyncio.TimeoutError:
+                        break  # idle timeout — no more turns coming
+            else:
+                try:
+                    await _do_watch(args.timeout)
+                except asyncio.TimeoutError:
+                    print(f"\nTimeout after {args.timeout}s", file=sys.stderr)
 
         # Interactive mode (default) - continue conversation
-        if not args.print_mode and not args.no_watch:
+        if not args.non_interactive and not args.no_watch:
             print("\n" + "─" * 40, file=sys.stderr)
-            auto_approve = args.edge is not None
 
             async def _watch(interrupt_on_cancel=True, suppress_cancel_notice=False, activity_event=None):
                 return await self.watch_todo(
@@ -503,6 +525,12 @@ class TODOCLITool:
                 )
 
             await interactive_loop(_watch, _send)
+
+        # Give the embedded edge time to finish any pending function calls
+        # (e.g., file creation) before shutting down.  The frontend WS may
+        # receive TODO_DONE before the edge WS has processed the last block.
+        if self._embedded_edge:
+            await asyncio.sleep(2)
 
         # Clean up embedded edge if running
         await self.edge.close_frontend_ws()
@@ -554,7 +582,8 @@ async def _async_main(cfg: TODOCLIConfig, args: argparse.Namespace) -> None:
                     print("Error: No recent todo found for this agent", file=sys.stderr)
                     sys.exit(1)
             await tool.resume_todo(
-                todo_id, args.timeout, args.json, auto_approve=args.edge is not None
+                todo_id, args.timeout, args.json,
+                auto_approve=args.edge is not None or args.skip_permissions,
             )
         finally:
             await tool.stop_embedded_edge()

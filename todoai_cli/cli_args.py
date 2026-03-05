@@ -13,7 +13,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples:
   todoai "Research AI trends"               # Prompt as argument
-  todoai -p "Quick task"                    # Print mode (non-interactive)
+  todoai -n "Quick task"                    # Non-interactive (run and exit)
   echo "Piped content" | todoai             # Pipe from stdin
   todoai --path /my/project "Fix the bug"  # Explicit workspace path
   todoai --edge "Run locally"               # Execute blocks in this process
@@ -62,11 +62,11 @@ Examples:
         help="Create todo and exit without watching for completion",
     )
     parser.add_argument(
-        "-p",
-        "--print",
+        "--non-interactive",
+        "-n",
         action="store_true",
-        dest="print_mode",
-        help="Non-interactive: run single message and exit",
+        dest="non_interactive",
+        help="Run to completion and exit without interactive prompt",
     )
     parser.add_argument(
         "--timeout",
@@ -87,6 +87,12 @@ Examples:
         default=None,
         metavar="WORKSPACE",
         help="Start embedded edge for local block execution (optionally specify workspace path, default: cwd)",
+    )
+    parser.add_argument(
+        "--dangerously-skip-permissions",
+        action="store_true",
+        dest="skip_permissions",
+        help="Auto-approve all blocks without prompting (for CI/benchmarks)",
     )
     parser.add_argument("--config-path", metavar="PATH", help="Custom config file path")
 
