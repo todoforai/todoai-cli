@@ -1,6 +1,6 @@
 # @deprecated
 
-This project is deprecated in favor of [todoforai/cli-bun](https://github.com/todoforai/cli-bun).
+This project is deprecated in favor of [todoforai/cli](https://github.com/todoforai/cli).
 
 ---
 
