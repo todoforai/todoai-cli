@@ -25,13 +25,13 @@ from .project_selectors import (
     select_agent,
     _get_display_name,
     _get_item_id,
-    _get_terminal_input,
 )
 from .message_display import MessageDisplay
 from .logo import print_logo
 from .watch import watch_todo as _watch_todo
 from .interactive import interactive_loop
-from .cli_args import build_parser, handle_config_commands
+from .cli_args import build_parser, handle_config_commands, _format_path_with_tilde
+from .prompt_input import create_session, get_interactive_input
 
 
 def _get_agent_workspace_paths(agent: dict) -> list:
@@ -112,12 +112,13 @@ class TODOCLITool:
             self._embedded_edge_task = None
         self._embedded_edge = None
 
-    def read_stdin(self) -> str:
+    async def read_stdin(self) -> str:
         """Read content from stdin or prompt for interactive input"""
         if sys.stdin.isatty():
-            # Interactive mode - single line, Enter sends
+            # Interactive mode - use prompt_toolkit so multiline paste is preserved
             try:
-                content = _get_terminal_input("TODO> ").strip()
+                session = create_session()
+                content = await get_interactive_input(session, "TODO> ")
             except (KeyboardInterrupt, EOFError):
                 print("\nCancelled", file=sys.stderr)
                 sys.exit(1)
@@ -328,7 +329,7 @@ class TODOCLITool:
             else:
                 resolved = os.path.realpath(args.path)
                 print(
-                    f"No agent found for '{resolved}', creating one...", file=sys.stderr
+                    f"No agent found for '{_format_path_with_tilde(resolved)}', creating one...", file=sys.stderr
                 )
                 try:
                     pre_matched_agent = await self._auto_create_agent(resolved, agents)
@@ -342,7 +343,10 @@ class TODOCLITool:
         if pre_matched_agent:
             paths = _get_agent_workspace_paths(pre_matched_agent)
             path_label = "Path" if len(paths) == 1 else "Paths"
-            path_str = paths[0] if len(paths) == 1 else str(paths)
+            if len(paths) == 1:
+                path_str = _format_path_with_tilde(paths[0])
+            else:
+                path_str = str([_format_path_with_tilde(p) for p in paths])
             print(
                 f"\033[90mAgent:\033[0m \033[38;2;249;110;46m{_get_display_name(pre_matched_agent)}\033[0m \033[90m│ {path_label}:\033[0m \033[36m{path_str}\033[0m",
                 file=sys.stderr,
@@ -352,7 +356,7 @@ class TODOCLITool:
         if args.prompt:
             content = " ".join(args.prompt)
         else:
-            content = self.read_stdin()
+            content = await self.read_stdin()
 
         # Check if we can skip fetching lists (have defaults or CLI args)
         has_project = args.project or self.config.data.get("default_project_id")

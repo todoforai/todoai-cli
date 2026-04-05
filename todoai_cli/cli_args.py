@@ -3,6 +3,16 @@
 import argparse
 import asyncio
 import json
+import os
+
+
+def _format_path_with_tilde(path: str) -> str:
+    """Replace home directory with ~ in path for display."""
+    home = os.path.expanduser("~")
+    path_str = str(path)
+    if path_str.startswith(home):
+        return path_str.replace(home, "~", 1)
+    return path_str
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -132,14 +142,14 @@ Examples:
 def handle_config_commands(cfg, args) -> bool:
     """Handle config-related commands. Returns True if a command was handled."""
     if args.show_config:
-        print(f"Config file: {cfg.config_path}")
+        print(f"Config file: {_format_path_with_tilde(str(cfg.config_path))}")
         print(json.dumps(cfg.data, indent=2))
         return True
 
     if args.reset_config:
         if cfg.config_path.exists():
             cfg.config_path.unlink()
-            print(f"Configuration reset: {cfg.config_path}")
+            print(f"Configuration reset: {_format_path_with_tilde(str(cfg.config_path))}")
         else:
             print("No configuration file to reset")
         return True
